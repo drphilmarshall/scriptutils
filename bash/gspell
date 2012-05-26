@@ -1,0 +1,52 @@
+#!/bin/bash
+#=======================================================================
+#+
+# NAME:
+#   gspell
+#
+# PURPOSE:
+#   Use Google as a context-sensitive democratic spell-checker.
+#
+# COMMENTS:
+#   Works best for short (few words only) excerpts. May not spot common
+#   mis-spellings!
+# 
+# INPUTS:
+#   string          piece of text to be tested for spelling
+#
+# OPTIONAL INPUTS:
+#
+# OUTPUTS:
+#   stdout          what google thinks you meant...
+#
+# EXAMPLES:
+#  host> gspell  what google thinsk you menat
+#  what google thinks you meant
+#
+#  host> gspell  discorbobulated
+#  discombobulated
+#
+#  host> gspell  disconbobulated
+#  disconbobulated
+#
+#
+# BUGS:
+#
+# REVISION HISTORY:
+#   2006-04-21  started Howcroft (Caltech)
+#-
+#=======================================================================
+
+words='"'"$@"'"'
+
+lynx -dump -traversal "http://www.google.com/search?hl=en&lr=&q=${words}&btnG=Search"  > /tmp/junk
+output=`cat /tmp/junk | grep "Did you mean" | cut -d']' -f 2 | uniq`
+
+newwords=`echo $output | sed s/\"//g` 
+
+if [ ${#output} -eq 0 ]; then  
+  newwords=`echo $words | sed s/\"//g` 
+else
+  newwords=`echo $output | sed s/\"//g` 
+fi
+echo $newwords

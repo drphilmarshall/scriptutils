@@ -1,0 +1,26 @@
+#!/bin/tcsh
+
+if ( ! -e /proc/cpuinfo ) then
+  echo $HOST': cannot read /proc/cpuinfo, file does not exist'
+  goto finish
+endif  
+if ( ! -e /proc/meminfo ) then
+  echo $HOST': cannot read /proc/meminfo, file does not exist'
+  goto finish
+endif  
+
+set ncpu = `cat /proc/cpuinfo | grep "processor" | wc -l`
+if ( $ncpu == 0 ) then
+  echo $HOST': CPU specifications not available in /proc/cpuinfo'
+  goto finish
+endif  
+  
+set MHz = `cat /proc/cpuinfo | grep "cpu MHz" | head -1 | cut -d":" -f 2`
+set speed = `echo "scale = 2; $MHz / 1000.0" | bc`
+
+set kB = `cat /proc/meminfo | grep MemTotal | cut -d":" -f 2 | cut -d"k" -f1`
+set memory = `echo "$kB / 1024.0" | bc`
+
+echo $ncpu' x '$speed' GHz processor(s), '$memory' MB RAM'
+
+finish:

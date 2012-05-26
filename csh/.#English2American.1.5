@@ -1,0 +1,234 @@
+#!/bin/tcsh
+# =======================================================================
+#+
+# NAME:
+#   English2American
+#
+# PURPOSE:
+#   Translate plain text from British English to American English.
+#
+# COMMENTS:
+#   Input file is overwritten.
+#
+# INPUTS:
+#   file*                 List of files
+#
+# OPTIONAL INPUTS:
+#   -h --help             Online help [0]
+#   -r --reverse          Do the inverse operation [0]
+#   -o --output $newfile  Save the output in a new file "$newfile"
+#   
+# OUTPUTS:
+#   file*                 Now translated, overwritten files (unless -o)
+#
+# EXAMPLES:
+#   English2American constitution.tex 
+#   English2American -r constitution.tex 
+# 
+# BUGS:
+#   - incomplete vocabulary
+#   - some words cannot be blindly translated, eg "analyses" is a
+#     perfectly good American English noun
+#
+# REVISION HISTORY:
+#   2005-03-14  started Marshall (KIPAC)
+#   2007-04-30  reverse operation added Marshall (KIPAC)
+#-
+#=======================================================================
+
+set help = 0
+set reverse = 0
+set overwrite = 1
+set nowhilst = 0
+
+set files = ( )
+set nfiles = 0
+
+unset noclobber
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case --{no-whilst}:  
+      set nowhilst = 1
+      shift argv
+      breaksw
+   case -r:           #  reverse (American2English)
+      shift argv
+      set reverse = 1
+      breaksw
+   case --{reverse}:   
+      shift argv
+      set reverse = 1
+      breaksw
+   case -o:           #  output filename (or extension)
+      shift argv
+      set output = $argv[1]
+      shift argv
+      set overwrite = 0
+      breaksw
+   case --{output}:   
+      shift argv
+      set output = $argv[1]
+      shift argv
+      set overwrite = 0
+      breaksw
+   case *:            #  Files to be edited
+      set files = ( $files[1-] $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+set nfiles = $#files
+if ( $help == 1 || $nfiles == 0 ) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# ------------------------------------------------------------------------------
+
+# Welcome:
+
+echo "${0:t}: Replacing words with their counterparts from across the pond:"
+if ($reverse) then
+  echo "${0:t}: American English will be translated to British English"
+else
+  echo "${0:t}: British English will be translated to American English"
+endif
+if ($overwrite) echo "${0:t}: WARNING: overwriting files"
+echo "${0:t}: "
+
+SETUP:
+
+set words=( \
+whilst while \
+analyse analyze \
+'licences ' 'licenses ' \
+'licence ' 'license ' \
+'practice ' 'practise ' \
+flavour flavor \
+colour color \
+'programme ' 'program ' \
+'programmes ' 'programs ' \
+'programmed ' 'programed ' \
+haloes halos \
+characteris characteriz \
+marginalis marginaliz \
+optimise optimize \
+optimisa optimiza \
+parameteris parameteriz \
+regularis regulariz \
+aluminium aluminum \
+neighbour neighbor \
+'catalogue ' 'catalog ' \
+catalogued cataloged \
+catalogues cataloges \
+cataloguing cataloging \
+modelle modele \
+modelling modeling \
+)
+
+set nwords=$#words
+set nambiguities = 5
+set nambiguities = `echo "$nambiguities * 2" | bc`
+
+# ------------------------------------------------------------------------------
+
+LOOP:
+
+foreach file ( $files )
+
+# Set up output file:
+  if ($overwrite) then
+    set outfile = $file
+  else  
+    if ($nfiles == 1) then
+      set outfile = $output
+    else
+      set outfile = ${file:r}.${output}.${file:e}
+    endif
+    cp -f $file $outfile
+  endif      
+  echo "${0:t}: Input file: $file"
+  echo "${0:t}: Output file: $outfile"
+  echo "${0:t}: Translations:"
+   
+  set k=1
+  if ($nowhilst) then
+    @ k = $k + 2
+  endif
+  while ( $k < $nwords )
+  
+# Get lower case word pair [British,American]
+
+    if ($reverse) then
+      set pattern2=$words[$k]
+      @ k ++
+      set pattern1=$words[$k]
+      @ k ++
+    else
+      set pattern1=$words[$k]
+      @ k ++
+      set pattern2=$words[$k]
+      @ k ++
+    endif      
+    
+# Straight replacement:
+
+    sed s/$pattern1/$pattern2/g $outfile > junk
+    set changed = `diff junk $outfile | tail -1 | wc -l`
+    if ($changed) then
+      if ($k <= $nambiguities ) echo "WARNING: ambiguous word edit:"
+      mv junk $outfile
+      grep -n $pattern2 $outfile
+    endif
+
+# Title case:
+
+    set initial = `echo $pattern1 | cut -c1`
+    set remainder = `echo $pattern1 | cut -c2-`
+    set initial = `echo $initial | tr '[:lower:]' '[:upper:]'`
+    set pattern1 = "${initial}${remainder}"
+    set initial = `echo $pattern2 | cut -c1`
+    set remainder = `echo $pattern2 | cut -c2-`
+    set initial = `echo $initial | tr '[:lower:]' '[:upper:]'`
+    set pattern2 = "${initial}${remainder}"
+
+    sed s/$pattern1/$pattern2/g $outfile > junk
+    set changed = `diff junk $outfile | tail -1 | wc -l`
+    if ($changed) then
+      if ($k <= $nambiguities ) echo "WARNING: ambiguous word edit:"
+      mv junk $outfile
+      grep -n $pattern2 $outfile
+    endif
+
+# Upper-case:
+
+    set pattern1 = `echo $pattern1 | tr '[:lower:]' '[:upper:]'`
+    set pattern2 = `echo $pattern2 | tr '[:lower:]' '[:upper:]'`
+    
+    sed s/$pattern1/$pattern2/g $outfile > junk
+    if ($changed) then
+      if ($k <= $nambiguities ) echo "WARNING: ambiguous word edit:"
+      mv junk $outfile
+      grep -n $pattern2 $outfile
+    endif
+  
+
+  end # of loop over word pairs
+  echo "${0:t}: done/finished."
+  
+end # of loop over input files
+
+# ==============================================================================
+FINISH:

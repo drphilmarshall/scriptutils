@@ -1,0 +1,137 @@
+#!/bin/tcsh
+#===============================================================================
+#+
+# NAME:
+#   slavedrivers
+#
+# PURPOSE:
+#   Check who is driving the slave machines
+#
+# COMMENTS:
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#   -f file   Use plain text file listing worker names, default is .slaves
+#   -x        Only show other users, not yourself
+#   -i        Only show other interactive users
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#   > slavedrivers -f .fujis
+#
+# BUGS:
+#   - Have to type password many times if ssh keys are not set
+#
+# REVISION HISTORY:
+#   2005-09-03  started Marshall (KIPAC)
+#-
+#===============================================================================
+
+# Options and arguments:
+
+set help = 0
+set exclude = 0
+set interactive = 0
+set file = $HOME/.slaves
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -u:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case -h:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case --{help}:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case -x:        #  only show others
+      shift argv
+      set exclude = 1
+      breaksw
+   case -i:        #  only show interactive sessions
+      shift argv
+      set interactive = 1
+      breaksw
+   case -f:        #  file with slave names
+      shift argv
+      set file = $argv[1]
+      shift argv
+      breaksw
+   case *:         #  command line dross
+      shift argv
+      breaksw
+   endsw
+end
+
+#-------------------------------------------------------------------------------
+
+# Catch stupidities:
+
+if ( $help == 1 ) then
+  echo "slavedrivers: usage:"
+  echo "         slavedrivers [-f file] "
+  goto FINISH
+endif
+
+if ( ! -e $file ) then
+  echo "ERROR: slaves file $file does not exist, aborting"
+  goto FINISH
+endif  
+
+#-------------------------------------------------------------------------------
+
+set slaves = `cat $file | cut -d":" -f 1`
+set masters = `cat $file | cut -d":" -f 2`
+
+set k = 0
+while ( $k < $#slaves )  
+
+  @ k ++
+
+# First check if we are already on a slave - no need to ssh if so!  
+  if (${HOST} == $slaves[$k]) then
+    w -h |& grep -v 'w -h' > junk
+  else
+    ssh -q $slaves[$k] w -h |& grep -v 'w -h' > junk
+  endif
+
+  set nshells = `cat junk | wc -l`
+  @ useful = $nshells - 1
+
+  if ( $nshells != 0 ) then
+
+    head -$useful junk > junk2
+    mv junk2 junk
+
+    if ( $interactive && $exclude ) then
+      set drivers = `cat junk | cut -c 1-9 | sort | uniq | grep -v $USER | grep -e ' :0 '`
+    else if ( $interactive ) then
+      set drivers = `cat junk | cut -c 1-9 | sort | uniq | grep -e ' :0 '`
+    else if ( $exclude ) then
+      set drivers = `cat junk | cut -c 1-9 | sort | uniq | grep -v $USER`
+    else  
+      set drivers = `cat junk | cut -c 1-9 | sort | uniq`
+    endif  
+  
+  else
+    
+    set drivers = " "
+  
+  endif
+
+  echo $slaves[$k]': '$drivers
+  
+  \rm junk
+
+end
+
+FINISH:
+
+#===============================================================================
+

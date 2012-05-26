@@ -1,0 +1,44 @@
+#! /usr/bin/perl
+
+open(STDIN,"$ARGV[0]") || die "Ech! cant read doc $ARGV[0]\n" if $ARGV[0];
+
+$dump = 0;
+
+while (<>) {
+
+    $header = $_ if ($. == 1);
+
+    if (/^%%BeginDocument:\s(.*)$/) {
+	($file = $1) =~ s#.*/##g;
+
+	if (-e $file) {
+
+	    print STDERR "$file already existing on directory --- " .
+		"not extracted!\n";
+
+	} else {
+
+	    print "extracting ${file} ... ";
+
+	    open (OUT,">$file");
+
+	    print OUT $header;
+
+	    $dump=1;
+	}
+    }
+
+    if ($dump == 1 && /^%%EndDocument/) {
+
+	close OUT;
+
+	$dump = 0;
+
+	print "done\n";
+
+    }
+
+    print OUT if $dump;
+
+}
+

@@ -1,0 +1,93 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   oneliner
+#
+# PURPOSE:
+#   Print file all on one line.
+#
+# COMMENTS:
+#   Useful for email address lists! Must use quotes around string containing
+#   whitespace
+#
+# USAGE:
+#       oneliner [-s ','] file
+#
+# INPUTS:
+#   file                   Input file (or list of files if editing in place)
+#
+# OPTIONAL INPUTS:
+#   -s --spacer  'XXX'     Separate line contents with string XXX [def=' ']
+#   -h --help
+#
+# OUTPUTS:
+#   file (or outfile with -o)
+#
+# EXAMPLES:
+#
+#   oneliner -s ', ' file.txt
+# 
+#
+# DEPENDENCIES:
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2007-12-18  started Marshall (UCSB)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set space = ' '
+set files = ()
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -s:           #  add a spacer between line contents, def = " "
+      shift argv
+      set space = $argv[1]
+      shift argv
+      breaksw
+   case --{spacer}:  
+      shift argv
+      set space = $argv[1]
+      shift argv
+      breaksw
+   case *:            #  list of files to be onelinered
+      set files = ( $files $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help || $#files == 0) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+foreach file ( $files )
+
+  cat $file | awk '{printf "%s\r", $0}' | sed s/\\r/"${space}"/g ; echo " " 
+  
+end
+
+FINISH:
+
+#=======================================================================

@@ -1,0 +1,142 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   swellwatch
+#
+# PURPOSE:
+#   Scrape wetsand.com for tide information for Santa Barbara.
+#
+# COMMENTS:
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#
+# BUGS:
+#  - not sure about stability of urls
+#  - only today's information is available
+#  - haven't scraped wind yet
+#
+# REVISION HISTORY:
+#   2007-06-03  started Marshall (UCSB)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set help = 0
+
+#Escaped default
+unset noclobber
+unalias rm
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:
+      set help = 1
+      shift argv
+      breaksw
+   case --help:
+      set help = 1
+      shift argv
+      breaksw
+   case *:
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+# Catch stupidities, set up variables:
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+set fail = `which curl | & grep "Command not found" | wc -l`
+if ($fail) then
+  echo "${0:t}: ERROR: curl not found"
+  goto FINISH
+endif
+
+#-----------------------------------------------------------------------
+
+# Look up page on wetsand.com:
+
+set webpage = /tmp/swellwatch.main.html ; \rm -f $webpage
+set popup = /tmp/swellwatch.popup.html ; \rm -f $popup
+
+# Download main web page as plain text:
+set url = "http://www.wetsand.com/swellwatch/swellwatch.asp?catid=295&HomeTideZone=NWCC"
+curl -s "$url" | strings >! $webpage
+  
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+echo "Tide information for Santa Barbara, CA:"
+
+# Find reference for today's tides:
+set ref = `grep 'tide.asp' $webpage | cut -d'(' -f2 | cut -d')' -f1 \
+                                    | cut -d"'" -f2 | head -1` 
+
+# Download little extra popup:
+set url = "http://www.wetsand.com/swellwatch/$ref"
+curl -s "$url" | strings >! $popup
+
+# Pull out relevant information - need to trim off first charcter (<np>):
+cat $popup | \
+  grep -e "Sunrise" \
+       -e "Sunset" \
+       -e "Low Tide" \
+       -e "High Tide" \
+       -e "Twilight" \
+    | cut -c2-
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# Find line numbers for today's surf height:
+set NWline = `grep -n 'NW Surf Forecast' $webpage | cut -d':' -f1`
+set SWline = `grep -n 'SW Surf Forecast' $webpage | cut -d':' -f1`
+@ nlines = $SWline - $NWline
+
+# NW surf height:
+
+tail -n +$NWline $webpage | head -$nlines >! $popup 
+set index = `grep -n fundo_new $popup | cut -d':' -f1`
+
+echo -n "NW surf height: "
+# Today = 1 - get 5 heights, take middle one:
+  set day = 1
+  @ nextday = $day + 1
+  @ nlines = $index[$nextday] - $index[$day]
+  tail -n +$day $popup | head -$nlines | grep feet | \
+    cut -d'|' -f2 | head -3 | tail -1
+
+# SW surf height:
+
+tail -n +$SWline $webpage >! $popup 
+set index = `grep -n fundo_new $popup | cut -d':' -f1`
+
+echo -n "SW surf height: "
+# Today = 1 etc - get 5 heights, take middle one:
+  set day = 1
+  @ nextday = $day + 1
+  @ nlines = $index[$nextday] - $index[$day]
+  tail -n +$day $popup | head -$nlines | grep feet | \
+    cut -d'|' -f2 | head -3 | tail -1
+
+
+# Clean up:
+\rm -f $webpage $popup
+
+FINISH:
+
+#=======================================================================

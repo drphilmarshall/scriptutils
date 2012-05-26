@@ -1,0 +1,102 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   rename4pdflatex
+#
+# PURPOSE:
+#   Rename image files so that only one fullstop appears in the filename - 
+#   all other fullstops are converted to underscores.
+#
+# COMMENTS:
+#   Should optionally works on tex file as input...
+#
+# USAGE:
+#       rename4pdflatex [-t] file [-o outfile]
+#
+# INPUTS:
+#   file                      File (or list of files) to be renamed
+#
+# OPTIONAL INPUTS:
+#   -c --copy                 Do not delete original file
+#   -f --input-file  x.tex    Use x.tex as input file to get file list      
+#   -h --help
+#
+# OUTPUTS:
+#   renamed files
+#
+# EXAMPLES:
+#
+#   rename4pdflatex   x.cf.y.jpg
+#   
+#   rename4pdflatex   -f ms.tex 
+# 
+#
+# DEPENDENCIES:
+#
+# BUGS:
+#   - tex file input not coded yet
+#  
+# REVISION HISTORY:
+#   2007-12-18  started Marshall (UCSB)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set copy = 0
+set files = ()
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -c:           #  keep original files 
+      set copy = 1
+      shift argv
+      breaksw
+   case --{copy}:        
+      set output = 1
+      shift argv
+      breaksw
+   case *:            #  list of files to be renamed
+      set files = ( $files $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help || $#files == 0) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+echo "rename4pdflatex: renaming files with '.' replaced by '_' "
+
+foreach file ( $files )
+
+  set newfile = `echo $file:r | sed s/'\.'/'_'/g`.$file:e
+  if ($copy) then
+    cp -vf $file $newfile 
+  else 
+    mv -vf $file $newfile
+  endif
+  
+end
+
+FINISH:
+
+#=======================================================================

@@ -1,0 +1,236 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME: 
+#   bbl2bib
+#
+# PURPOSE:
+#   Generate .bib file for a given latex bbl database (.bbl file, or
+#   latex file) using scrapeADS.
+#
+# COMMENTS:
+# 
+# INPUTS:
+#   database.bib		  latex bibliography file (or list of files!)
+#   
+# OPTIONAL INPUTS:
+#   paper.tex		  latex file, to seach for bibliographic entries
+#   -o --output  outfile  output bibtex filename
+#
+# OUTPUTS:
+#   *.bib			  bibtex database
+#
+# EXAMPLES:
+#   > bbl2bib paper.bbl
+#
+#   > bbl2bib paper.tex -o pjm.bib
+#
+# DEPENDENCES:
+#   - scrapeADS
+#
+# BUGS:
+#
+# REVISION HISTORY:
+#   2009-03-24  started Marshall (KIPAC)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set inputs = ()
+set bibfile = 0
+set help = 0
+unalias rm
+unalias mv
+unalias cp
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:        #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -o:       
+      shift argv
+      set bibfile = $argv[1]
+      shift argv
+      breaksw
+   case --{output}:
+      shift argv
+      set bibfile = $argv[1]
+      shift argv
+      breaksw
+   case *:         #  The latex/bbl files
+      set inputs = ( $inputs $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+# Catch stupidities:
+
+if ( $help == 1 ) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+if ($#inputs == 0) then
+  echo "bbl2bib: no input files supplied"
+  echo "         bbl2bib [paper.tex|paper.bbl]"
+  goto FINISH
+else if ($#inputs == 1 && $bibfile == 0) then
+  set bibfile = ${inputs[1]:r}.bib
+else if ($bibfile == 0) then
+  set bibfile = bbl2bib.bib
+endif
+
+echo "bbl2bib: output BibTex database will be "$bibfile
+
+if (-e $bibfile) then
+  echo "bbl2bib: bibfile exists, stopping..."
+  goto FINISH
+endif  
+
+#-----------------------------------------------------------------------
+# Loop over inputs:
+
+set tmp = bbl2bib.tmp
+set authorlist = bbl2bib.authors
+set keylist = bbl2bib.keys
+set yearlist = bbl2bib.years
+\rm -f $tmp $authorlist $keylist $yearlist
+
+foreach input ( $inputs )
+
+  if (! -e $input) then 
+    echo "bbl2bib: input file not found ($input)"
+    goto FINISH
+  endif
+
+  echo "bbl2bib: scraping input file $input for keys, authors and years..."
+
+# Here's the kind of thing we have to cope with:
+# % \bibitem[Belokurov et al. (2007)]{belokurov2007} Belokurov et al. 2007, \apj, 658, 337 
+# % \bibitem[Bullock \& Johnston (2005)]{bullock2005} Bullock, J.S. \& Johnston, K.V. 2005, \apj, 635, 931 \bibitem[Combes et al. (1999)]{combes1999} Combes, F., Leon, S.,
+# % \bibitem[Grillmair (1998)]{grillmair1998} Grillmair, C.J., 1998, in
+# % \bibitem[Grillmair
+# % \bibitem[Grillmair (2006a)]{grillmair2006a} Grillmair,C.J. 2006a,
+# % \bibitem[Grillmair \& Dionatos (2006a)]{grillmairdionatos2006a} Grillmair, C.J., \& Dionatos, O. 2006a, \apjl, 641, L37
+# % \bibitem[Grillmair \& Dionatos (2006b)]{grillmairdionatos2006b} Grillmair, C.J., \& Dionatos, O. 2006b, \apjl, 643, L17
+# % Dubinski, J. 1999, \aj, 118, 911 \bibitem[Odenkirchen et al. (2000)]{odenkirchen2000}
+# % \bibitem[Odenkirchen et al. (2003)]{odenkirchen2003} Odenkirchen, M., Grebel, E. K., Dehnen,
+# % \bibitem[Rockosi (2002)]{rockosi2002} Rockosi, C.~M. et al. 2002, \aj, 124, 349
+# % \bibitem[Yanny et al. (2003)]{yanny2003} Yanny, B. et al. 2003, \apj,
+
+  grep '\\bibitem'  milkyway.tex |\
+    sed s/'\\bibitem'/\\nXXXXX/g | grep XXXXX | sed s/XXXXX//g |\
+    cut -d'}' -f1 | grep '(' > $tmp
+
+  set n = `cat $tmp | wc -l`
+  echo "bbl2bib: ...found $n entries"
+  
+  cat $tmp | cut -d'[' -f2 | cut -d']' -f1 | \
+    sed s/' et '/' '/g | sed s/' al. '/' '/g | sed s/'\\&'//g | \
+    sed s/'{'/''/g | sed s/'}'/''/g | cut -d'(' -f1 >> $authorlist
+
+  cat $tmp | cut -d'(' -f2 | cut -d')' -f1 | \
+    sed s/'[a-z]'//g >> $yearlist
+    
+  cat $tmp | cut -d'{' -f2 >> $keylist 
+
+end
+\rm -f $tmp
+
+set n1 = `cat $authorlist | wc -l`
+set n2 = `cat $yearlist | wc -l`
+set n3 = `cat $keylist | wc -l`
+
+if ($n1 == $n2 && $n2 == $n3) then
+  echo "bbl2bib: total of $n1 bibliographic entries found"
+else
+  echo "bbl2bib: ERROR: authors, years, and keys do not match." 
+  echo "bbl2bib:        Edit the input file(s) until this problem disappears," 
+  echo "bbl2bib:        Here are the derived authors, years and keys:" 
+  paste $authorlist $yearlist $keylist
+  goto FINISH
+endif
+
+#-----------------------------------------------------------------------
+# Run scrapeADS to get a superset of results!
+
+set i = 0
+while ($i < $n1)
+
+  @ i ++
+  set authors = `tail -n +$i $authorlist | head -1`
+  set year = `tail -n +$i $yearlist | head -1`
+  set key = `tail -n +$i $keylist | head -1`
+
+  set runfile = $key.run
+  set logfile = $key.log
+  set options = "-r"
+  foreach j ( `seq $#authors` )
+    if ($j == 1) then
+      set options = "$options -f $authors[$j]"
+    else
+      set options = "$options -a $authors[$j]"
+    endif  
+  end
+  set options = "$options -y $year"
+  echo "scrapeADS $options >& $logfile" > $runfile
+  
+  source $runfile
+  
+  set thisbibfile = `tail -1 $logfile | awk '{print $6}'`
+  
+# If no abstracts were found, flag and move on:
+  if ($#thisbibfile == 0) then 
+    echo "bbl2bib: WARNING: 0 articles found with scrapeADS $options"
+  else  
+
+    mv $thisbibfile $key.bib
+  
+# Change the keys...
+    set oldkeys = `cat $key.bib | grep ARTICLE | cut -d'{' -f 2 | cut -d',' -f1`
+    if ($#oldkeys > 1) then
+      echo "bbl2bib: WARNING: $#oldkeys articles listed with key $key"
+    else
+      echo "bbl2bib: found single article $key successfully"
+    endif 
+    foreach oldkey ( $oldkeys )
+      cat $key.bib | sed s/"$oldkey"/"$key"/g >! junk
+      mv junk $key.bib
+    end  
+    
+# append this bibfile to the final product:  
+    echo "\
+% ----------------------------------------------------------------------\
+% scrapeADS $options\
+" >> $bibfile
+    cat $key.bib >> $bibfile
+
+  endif
+  
+  \rm -f $key.bib $runfile $logfile
+end
+echo "\
+% ----------------------------------------------------------------------\
+" >> $bibfile
+
+set n = `cat $bibfile | grep ARTICLE | wc -l`
+echo "bbl2bib: $n bibtex entries written to database $bibfile"
+
+#-----------------------------------------------------------------------
+# Clean up and finish:
+
+\rm -f $authorlist $yearlist $keylist
+
+FINISH:
+
+#=======================================================================

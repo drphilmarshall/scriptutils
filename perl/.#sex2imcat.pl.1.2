@@ -1,0 +1,157 @@
+#!/usr/local/bin/perl -w
+# ======================================================================
+#+
+$usage = "
+
+NAME
+        sex2imcat.pl
+
+PURPOSE
+        Convert a SExtractor catalogue into imcat format.
+
+USAGE
+        sex2imcat.pl [flags] [options] input.scat
+
+FLAGS
+        -u        print this message
+        -m        assume Massey format
+        -h        assume Hudelot format
+        -p        assume Phil format
+        -s        assume stars.param format
+
+INPUTS
+        input.scat      ASCII_HEAD catalogue from SExtractor
+
+OPTIONAL INPUTS
+        -o file         write output to \"file\" (def=STDOUT)
+        -f file         corresponding image fits file (def=input.fits)
+        -z magzero      photometric zero point used by SExtractor
+
+OUTPUTS
+        STDOUT          Filtered catalogue
+
+COMMENTS
+
+EXAMPLES
+
+BUGS
+  - Horrible hard-coding of various catalogue styles...
+  - esystem verbosity hard coded to zero
+
+REVISION HISTORY:
+  2003-05-??  Started Marshall (MRAO)
+
+\n";
+#-
+# ======================================================================
+
+$sdir = $ENV{'SCRIPTUTILS_DIR'};
+require($sdir."/perl/esystem.pl");
+$doproc = 1;
+
+use Getopt::Long;
+GetOptions("o=s", \$outfile,
+           "f=s", \$fitsfile,
+           "z=f", \$zp,
+           "m", \$massey,
+           "h", \$hudelot,
+           "p", \$phil,
+           "s", \$stars,
+           "u", \$help        # print usage message
+           );
+
+(defined($help)) and die "$usage\n";
+$num=@ARGV;
+($num>0) or die "$usage\n";
+
+$flush=0;
+(defined($outfile)) or ($flush = 1);
+$sensible=0;
+(defined($fitsfile)) or ($sensible = 1);
+$getzp=0;
+(defined($zp)) or ($getzp = 1);
+
+print STDERR "Doing checks...\n";
+# Check for imcat environment:
+
+(defined($ENV{"IMCAT_DIR"})) or die "Imcat environment undefined.\n";
+
+# Check for existence of catalogue:
+
+$scatfile = shift @ARGV;
+(-e $scatfile) or die "sex2imcat: $scatfile not found.\n";
+print STDERR "Using SExtractor catalogue file $scatfile\n";
+
+# Set fits file name if required:
+
+if ($sensible == 1) {
+  $fitsfile = $scatfile;
+  $fitsfile =~ s/(.*)\..*/$1\.fits/;
+  ($fitsfile ne $scatfile) or die "Input file extension must be .scat\n";
+}
+
+# Check for existence of fits file:
+
+(-e $fitsfile) or die "sex2imcat: $fitsfile not found.\n";
+print STDERR "Using fits file $fitsfile\n";
+
+# Extract image size:
+
+print STDERR "Extracting image size...\n";
+chomp($xs = `stats -v N1 < $fitsfile`);
+chomp($ys = `stats -v N2 < $fitsfile`);
+print STDERR "...file is $xs by $ys.\n";
+
+# Extract photometric zero point:
+
+print STDERR "Sorting out zero point...\n";
+if ($getzp == 1) {
+  chomp($zp = `/u/ki/pjm/imcat/bin/linux/imhead -v PHOTOZP < $fitsfile`);
+}
+# $zp = 30.8;
+print STDERR "...zero point is $zp.\n";
+
+#Do imcat conversion:
+
+print STDERR "Cranking up imcat...\n";
+
+if (defined($stars)) {
+
+  print STDERR "Catalogue is in 'stars' format...\n";                        <
+  &esystem("lc -C -L 0 -x -a {history:\\ Converted\\ from\\ SExtractor\\ with\\ sex2imcat.pl}  -N '1 2 x' -N '1 2 xp' -N '1 2 xmin' -N '1 2 xmax' -n a -n b -n th -n star -n fwhm -n smag -n sflux -n sarea -n id < $scatfile | lc -x id x fwhm star a b th smag -H 'fits_name = {$fitsfile}' -H 'fits_size = $xs $ys 2 vector' -H 'has_sky = 0' -H 'magzero = $zp' | lc +all 'x = \%x 0.5 0.5 2 vector vsub' | lc -x -a history:\\ SExtractor\\ ellipticities\\ added\\ by\\ massey-sex2imcat.pl +all 'es = \%a \%b - 0.034906585 \%th * cos * \%a \%b + / \%a \%b - 0.034906585 \%th * sin * \%a \%b + / 2 vector'  > junk", $doproc, 0);
+
+} elsif (defined($massey)) {
+
+  print STDERR "Catalogue is in Richard Massey's format...\n";                        <
+  &esystem("lc -C -L 0 -x -a {history:\\ Converted\\ from\\ SExtractor\\ with\\ sex2imcat.pl}  -N '1 2 x' -N '1 2 xp' -N '1 2 xmin' -N '1 2 xmax' -n a -n b -n th -n star -n fwhm -n smag -n sflux -n sarea -n id -N '1 6 junk' < $scatfile | lc -x id x fwhm star a b th smag -H 'fits_name = {$fitsfile}' -H 'fits_size = $xs $ys 2 vector' -H 'has_sky = 0' -H 'magzero = $zp' | lc +all 'x = \%x 0.5 0.5 2 vector vsub' | lc -x -a history:\\ SExtractor\\ ellipticities\\ added\\ by\\ massey-sex2imcat.pl +all 'es = \%a \%b - 0.034906585 \%th * cos * \%a \%b + / \%a \%b - 0.034906585 \%th * sin * \%a \%b + / 2 vector'  > junk", $doproc, 0);
+
+} elsif (defined($hudelot)) {
+
+  print STDERR "Catalogue is in Patrick Hudelot's format...\n";                        <
+  &esystem("lc -C -L 0 -x -a {history:\\ Converted\\ from\\ SExtractor\\ with\\ sex2imcat.pl} -n id -N '1 3 junk' -n sflux -n smag -n smagerr -n junk2 -N '1 2 x' -N '1 3 junk3' -n a -n b -n flags  < $scatfile  | lc -x id x 'fwhm = \%a \%b * sqrt' 'star = 0.0' a b 'th = 0.0' smag -H 'fits_name = {$fitsfile}' -H 'fits_size = $xs $ys 2 vector' -H 'has_sky = 0' -H 'magzero = $zp' | lc +all 'x = \%x 0.5 0.5 2 vector vsub' | lc -x -a history:\\ SExtractor\\ ellipticities\\ added\\ by\\ massey-sex2imcat.pl +all 'es = \%a \%b - 0.034906585 \%th * cos * \%a \%b + / \%a \%b - 0.034906585 \%th * sin * \%a \%b + / 2 vector'  > junk", $doproc, 0);
+
+} elsif (defined($phil)) {
+
+  print STDERR "Catalogue is in Phil's format...\n";                        <
+  &esystem("lc -C -L 0 -x -a {history:\\ Converted\\ from\\ SExtractor\\ with\\ sex2imcat.pl} -n id  -N '1 2 x' -n star -n fwhm -n a -n b -n th -n smag -n flags  < $scatfile  | lc -x id x fwhm star a b th smag flags -H 'fits_name = {$fitsfile}' -H 'fits_size = $xs $ys 2 vector' -H 'has_sky = 0' -H 'magzero = $zp' | lc +all 'x = \%x 0.5 0.5 2 vector vsub' | lc -x -a history:\\ SExtractor\\ ellipticities\\ added\\ by\\ sex2imcat.pl +all 'es = \%a \%b - 0.034906585 \%th * cos * \%a \%b + / \%a \%b - 0.034906585 \%th * sin * \%a \%b + / 2 vector'  > junk", $doproc, 0);
+
+} else {
+
+  print STDERR "No sex catalogue defined, defaulting to Phil's format.\n";
+  &esystem("lc -C -L 0 -x -a {history:\\ Converted\\ from\\ SExtractor\\ with\\ sex2imcat.pl} -n id  -N '1 2 x' -n star -n fwhm -n a -n b -n th -n smag -n flags  < $scatfile  | lc -x id x fwhm star a b th smag flags -H 'fits_name = {$fitsfile}' -H 'fits_size = $xs $ys 2 vector' -H 'has_sky = 0' -H 'magzero = $zp' | lc +all 'x = \%x 0.5 0.5 2 vector vsub' | lc -x -a history:\\ SExtractor\\ ellipticities\\ added\\ by\\ sex2imcat.pl +all 'es = \%a \%b - 0.034906585 \%th * cos * \%a \%b + / \%a \%b - 0.034906585 \%th * sin * \%a \%b + / 2 vector'  > junk", $doproc, 0);
+
+}
+
+#Do output:
+
+print STDERR "Outputting:...\n";
+if ($flush == 1) {
+  &esystem("cat junk", $doproc, 0);
+  &esystem("rm junk", $doproc, 0);
+} else {
+  &esystem("mv junk $outfile", $doproc, 0);
+}
+
+# ======================================================================
+
+

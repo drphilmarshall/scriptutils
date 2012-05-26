@@ -1,0 +1,148 @@
+#!/bin/tcsh
+#===============================================================================
+#+
+# NAME: 
+#   cf
+#
+# PURPOSE:
+#   Compare two pieces of text.
+#
+# COMMENTS:
+#
+# INPUTS:
+#   a.file b.file
+#   
+# OPTIONAL INPUTS:
+#   -h --help
+#   -k --keyword  word     Key word to search for
+#   -w --width    w        Width of output stream [160]
+#   -c --context  n        +/-no. of lines of context [2]
+#
+# OUTPUTS:
+#   stdout		         
+#
+# BUGS:
+#
+# REVISION HISTORY:
+#   2006-06-03  started Marshall (UCSB)
+#-
+#===============================================================================
+
+# Options and arguments:
+
+unalias rm
+unset noclobber
+set help = 0
+set word = 0
+set files = ( )
+set context = 2
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -c:       
+      shift argv
+      set context = $argv[1]
+      shift argv
+      breaksw
+   case --context:       
+      shift argv
+      set context = $argv[1]
+      shift argv
+      breaksw
+   case -w:       
+      shift argv
+      set width = $argv[1]
+      shift argv
+      breaksw
+   case --width:       
+      shift argv
+      set width = $argv[1]
+      shift argv
+      breaksw
+   case -k:        
+      shift argv
+      set word = $argv[1]
+      shift argv
+      breaksw
+   case --keyword:        
+      shift argv
+      set word = $argv[1]
+      shift argv
+      breaksw
+   case *:       
+      set files = ( $files $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-------------------------------------------------------------------------------
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# Catch stupidities:
+
+if ( $#files != 2 ) then
+  echo "${0:t}: ERROR: too few/many files supplied"
+  goto FINISH
+endif
+if ( ! -e $files[1] ) then 
+  echo "${0:t}: ERROR: file not found: $files[1]"
+  goto FINISH
+endif
+if ( ! -e $files[2] ) then 
+  echo "${0:t}: ERROR: file not found: $files[1]"
+  goto FINISH
+endif
+
+#-------------------------------------------------------------------------------
+# Do an sdiff and keep the output in the log file:
+
+set logfile = cf.log
+
+sdiff -w 160 $files >! $logfile
+
+if ( $word == 0 ) then
+
+# Just print out and finish:
+
+  more $logfile 
+  goto FINISH
+  
+else
+
+# Look for keyword and print out contexts in which it appears:
+
+  set word = `echo $word | tr '[:upper:]' '[:lower:]'`
+
+  set lines = `cat $logfile | tr '[:upper:]' '[:lower:]' | \
+               grep -n "$word" | cut -d':' -f1` 
+  if ($#lines == 0) goto FINISH
+  set k = 0 
+  foreach line ( $lines )
+    echo " "
+    @ i = $line - $context
+    @ j = $context * 2 + 1
+    tail -n +$i $logfile | head -$j
+    echo " "
+    @ k ++
+    if ($k < $#lines) echo "**********************************************"
+  end
+    
+endif
+
+    
+FINISH:
+
+#===============================================================================

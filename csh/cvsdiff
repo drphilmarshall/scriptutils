@@ -1,0 +1,214 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME: 
+#   cvsdiff
+#
+# PURPOSE:
+#   Compare two revisions of the same file with sdiff output
+#
+# COMMENTS:
+#   Only subset of cvs diff and sdiff options are available.
+#   are saved to $cwd. sdiff output reads with oldest file on the left;
+#   here the repository current revision is defined as "older" than the
+#   local copy.
+#
+#   Now uses cvs update -r x.xx -p to get old version, avoid all diff 
+#   commands and use sdiff -l for clearest presentation.
+#
+# INPUTS:
+#   a.file
+#   
+# OPTIONAL INPUTS:
+#   -r		Revision number. Up to two -r flags can be specified.
+#   -n		Show line numbers and changes (relative to old file).
+#   -s		Suppress common lines (not useful with -n).
+#   -h --help
+#
+# OUTPUTS:
+#   stdout		sdiff stream
+#   a.file.vx.xx  Reconstructed revision files
+#
+# BUGS:
+#   - Only the last (non -r) argument is treated as the target filename
+#   - Unidentified options are not flagged
+#   - Interpretation of rev array options is clunky
+#   - Fails when passwords are required?
+#   - line numbering is not very clear
+#   - clever-width may be fragile / OS-dependent
+#
+# REVISION HISTORY:
+#   2005-04-20  started Marshall (KIPAC)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+unset file
+set help = 0
+set nrev = 0
+set suppresscommonlines = 0
+set options = "--expand-tabs -l"
+set grepoptions = ""
+set rev = ( 0 )
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -r:        #  Revision numbers
+      shift argv
+      set rev = ( $rev $argv[1] )
+      @ nrev ++
+      shift argv
+      breaksw
+   case -s:        #  Short sdiff
+      shift argv
+#       set options = "$options -s"
+      set suppresscommonlines = 1
+      breaksw
+   case -n:        #  Show line numbers - not useful with -s option
+      shift argv
+#       set options = "$options --expand-tabs -l"
+      set grepoptions = "$grepoptions -n"
+      breaksw
+   case --clever-width:        #  Use sensible terminal width 
+      shift argv
+      set w = `resize |& grep COLUMNS | cut -d"'" -f2`
+      @ w = $w - 10
+      set options = "$options -w $w"
+      breaksw
+   case *:         #  The file: only keep last one in list
+      set file = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# Catch stupidities:
+
+if ( ! $?file ) then
+  echo "cvsdiff: no file supplied"
+  echo "         cvsdiff [-r num1 -r num2] file"
+  goto FINISH
+endif
+if ( ! -e $file) then 
+  echo "cvsdiff: file not found ($file)"
+  echo "         cvsdiff [-r num1 -r num2] file"
+  goto FINISH
+endif
+if ( $nrev > 2 ) then
+  echo "cvsdiff: no more than two revisions can be specified"
+  echo "         cvsdiff [-r num1 -r num2] file"
+  goto FINISH
+endif
+
+# Get difference information from repository:
+
+# Tricky book-keeping: 
+#
+# Case 1: reconstruct current revision, nrev = 0
+# Case 2: reconstruct named revision, nrev = 1
+# Case 3: reconstruct 2 named revisions, nrev = 2
+
+if ( $nrev == 0 ) then
+  set i = -1
+# Extract current revision number from cvs log:
+  set rev[1]=`cvs log -h $file | grep head | cut -d":" -f2`
+else
+  set i = 0
+endif
+
+set revision = ( 0 0 )
+
+# Loop over revisions, generating patched revisions of the file.
+
+set OK = 1
+while ( $i < $nrev )
+
+# Loop counter:
+  @ i ++
+
+# rev array was over-filled by options code...  
+  @ j = $i + 1
+  if ( $nrev == 0 ) then
+    @ i ++
+  endif
+    
+# Read off revision number from command line variables:
+  set revision[$i] = $rev[$j]
+  
+  set output = "$file.v$revision[$i]"
+    
+# Set up flags for cvs update:
+  set string=" -r $rev[$j] "
+
+# Query repository::
+  cvs update $string -p $file > $output
+  chmod 644 $output
+  echo "cvsdiff: obtained archived version $output"
+
+# Measure output file length; either exit with no differences...
+
+  if ($nrev < 2) then
+    set n=`diff $output $file | wc -l`
+    if ( $n == "0" ) then
+      echo "  $file is identical to revision $rev[$j] in repository"
+      goto FINISH   
+    endif  
+  else if ($nrev == 2 && $j == $nrev) then
+    set n=`diff $output $file | wc -l`
+    if ( $n == "0" ) then
+      echo "  revision $rev[1] in repository is identical to revision $rev[2] in repository"
+      goto FINISH   
+    endif  
+  endif
+  
+end
+
+if ( $OK ) then
+
+# Now have either one or two old revisions.
+# Use sdiff, but implement -s option by hand:
+
+  if ($suppresscommonlines) then
+
+    if ( $nrev < 2 ) then
+      echo "cvsdiff: comparing $file.v$revision[1] with $file\n"
+      sdiff $options $file.v$revision[1] $file | \
+        grep $grepoptions . | sed 's/$/     /' | grep -v ' (     ' | more
+    else  
+      echo "cvsdiff: comparing $file.v$revision[1] with $file.v$revision[2]\n"
+      sdiff $options $file.v$revision[1] $file.v$revision[2] | \
+        grep $grepoptions . | sed 's/$/     /' | grep -v ' (     ' | more   
+    endif
+  
+  else
+
+    if ( $nrev < 2 ) then
+      echo "cvsdiff: comparing $file.v$revision[1] with $file\n"
+      sdiff $options $file.v$revision[1] $file | \
+        grep $grepoptions . | sed 's/$/     /' | sed s/' (     '/'  '/g | more
+    else  
+      echo "cvsdiff: comparing $file.v$revision[1] with $file.v$revision[2]\n"
+      sdiff --expand-tabs -l $file.v$revision[1] $file.v$revision[2] | \
+        grep $grepoptions . | sed 's/$/     /' | sed s/' (     '/'  '/g | more   
+    endif
+ 
+  endif
+endif
+
+FINISH:

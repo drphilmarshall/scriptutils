@@ -1,0 +1,298 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   elp
+#
+# PURPOSE:
+#   Predict spectral feature wavelengths given redshift (and vice versa)
+#
+# COMMENTS:
+#
+# INPUTS:
+#   lambda            Observed wavelength
+#  
+# OPTIONAL INPUTS:
+#   -s --shortlist    Only compute for shortlist of lines
+#   -a --absorption   Only show typical early-type galaxy absorption lines
+#   --sn --supernovae Only show lines for identifying supernovae
+#   -z --redshift z   Spectrum redshift
+#   -b                Only compute for continuum breaks
+#
+# OUTPUTS:
+#   stdout           
+#
+# EXAMPLES:
+#
+#   elp -v -z 1.7
+#     Predicting various emission line wavelengths       
+#       given redshift z = 1.7                           
+#     Predicted emission line wavelengths:               
+#       Lyman-delta: 2562 (outside OSIRIS filters)       
+#       Lyman-gamma: 2624 (outside OSIRIS filters)       
+#       Lyman-beta: 2767 (outside OSIRIS filters)        
+#       Lyman-alpha: 3283 (outside OSIRIS filters)       
+#       OII: 10062 (outside OSIRIS filters)              
+#       H-delta: 11075 (z band)                          
+#       H-gamma: 11720 (z band)                          
+#       H-beta: 13124 (J band)                           
+#       OIII: 13518 (J band)                             
+#       H-alpha: 17720 (H band)                          
+#       Paschen-delta: 27124 (outside OSIRIS filters)    
+#       Paschen-gamma: 29524 (outside OSIRIS filters)    
+#       Paschen-beta: 34597 (outside OSIRIS filters)     
+#       Paschen-alpha: 50611 (outside OSIRIS filters)
+#
+#   elp -s 5476
+#       Lyman-alpha: 3.50
+#       OII: 0.469
+#       H-alpha: -                                                                    # 
+#
+# BUGS:
+#
+# REVISION HISTORY:
+#   2007-09-11  started Marshall (UCSB)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set help = 0
+set vb = 0
+set short = 0
+set breaks = 0
+set z = 0
+set input = 0
+set obslambda = 0
+set abs = 0
+set sn = 0
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:
+      set help = 1
+      shift argv
+      breaksw
+   case --help:
+      set help = 1
+      shift argv
+      breaksw
+   case -v:        
+      set vb = 1
+      shift argv
+      breaksw
+   case --{verbose}:
+      set vb = 1
+      shift argv
+      breaksw
+   case -s:        
+      set short = 1
+      shift argv
+      breaksw
+   case --{shortlist}:
+      set short = 1
+      shift argv
+      breaksw
+   case -b:        
+      set breaks = 1
+      shift argv
+      breaksw
+   case -a:        
+      set abs = 1
+      shift argv
+      breaksw
+   case --{absorption}:
+      set abs = 1
+      shift argv
+      breaksw
+   case --{sn}:        
+      set sn = 1
+      shift argv
+      breaksw
+   case --{supernovae}:
+      set sn = 1
+      shift argv
+      breaksw
+   case -z:        
+      set z = 1
+      shift argv
+      breaksw
+   case --{redshift}:
+      set z = 1
+      shift argv
+      breaksw
+   case *:
+      set input = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+# Catch stupidities, set up variables:
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+if ($abs) then
+  if ($vb) echo "Predicting various absorption line wavelengths"
+else
+  if ($vb) echo "Predicting various emission line wavelengths"
+endif
+
+if ($z == 1) then
+  set z = $input
+  if ($vb) echo "  given redshift z = $z"
+else  
+  set obslambda = $input
+  if ($vb) echo "  given observed line wavelength = $obslambda"
+endif  
+
+#-----------------------------------------------------------------------
+# Basic data tables:
+
+set table = (\
+Lyman-break       912\
+Lyman-delta       949\
+Lyman-gamma       972\
+Lyman-beta       1025\
+Lyman-alpha      1216\
+CIV              1549\
+CIII             1909\
+MgII             2799\
+OII              3727\
+4000A-break      4000\
+H-delta          4102\
+H-gamma          4341\
+H-beta           4861\
+OIII             5007\
+H-alpha          6563\
+N-II             6583\
+Paschen-delta   10046\
+Paschen-gamma   10935\
+Paschen-beta    12814\
+Paschen-alpha   18745\
+Ca-H             3933\
+Ca-K             3968\
+G                4303\
+Mg-B             5174\
+Na-D             5892\
+Si-II            6150\
+He-I             5876\
+)
+
+set n = `echo "$#table / 2" | bc` 
+set name = ( `seq $n` )
+set lambda0 = ( `seq $n` )
+set i = 0
+foreach k ( `seq $n` )
+  @ i ++
+  set name[$k] = $table[$i]
+  @ i ++
+  set lambda0[$k] = $table[$i]
+end  
+
+
+if ($short) then
+  set index = ( 5 9 15 )
+else if ($abs) then
+  set index = ( 21 22 23 24 25 )
+else if ($breaks) then
+  set index = ( 1 10 )
+else if ($sn) then
+  set index = ( 13 15 26 27 )
+else
+  set index = ( `seq 20` )
+endif    
+
+# Broad-band filters - IR are for OSIRIS, optical are SDSS:
+
+set filtername = (\
+'SDSS u'\
+'SDSS g'\
+'SDSS r'\
+'SDSS i'\
+'SDSS z'\
+'OSIRIS z'\
+'OSIRIS J'\
+'OSIRIS H'\
+'OSIRIS K'\
+)
+
+set filtermin = (\
+3000\
+4000\
+5500\
+7000\
+8000\
+10190\
+11740\
+14660\
+19550\
+)
+
+set filtermax = (\
+4000\
+5500\
+7000\
+8000\
+10190\
+12040\
+13890\
+18080\
+24080\
+)
+
+set m = $#filtername
+
+#-----------------------------------------------------------------------
+# Mode 1 - input is observed wavelength, compute redshift given line 
+# is each type:
+
+if ($obslambda > 0) then
+
+  if ($vb) echo "Conditional redshifts:"
+  
+  foreach k ( $index )
+    set z = `echo "$obslambda / $lambda0[$k] - 1.0" | bc -l | cut -c 1-4`
+    set c = `echo "$z" | cut -c 1`
+    if ("$c" == '-') set z = '-'
+    if ("$c" == '.') set z = "0$z"
+    echo "  ${name[$k]} ($lambda0[$k]): $z"
+  end
+  
+#-----------------------------------------------------------------------
+# Mode 2 - input is redshift, compute predicted line wavelengths:
+
+else
+
+  set x = `echo "1.0 + $z" | bc -l`
+
+  if ($vb) echo "Predicted emission line wavelengths:"
+  
+  foreach k ( $index )
+    set lambda = `echo "$lambda0[$k] * $x" | bc | cut -d'.' -f1`
+    set string = 'outside optical/NIR'
+    foreach i ( `seq $m` )
+      set test = `echo "($lambda-$filtermin[$i])/($filtermax[$i]-$filtermin[$i])" | bc -l | cut -c 1`
+      if ($test == '.') then
+        set string = "$filtername[$i] band"
+        goto PRINTLINE
+      endif  
+    end
+PRINTLINE:    
+    echo "  ${name[$k]}: $lambda ($string)"
+  end
+
+endif
+
+#-----------------------------------------------------------------------
+
+# Clean up:
+
+FINISH:
+
+#=======================================================================

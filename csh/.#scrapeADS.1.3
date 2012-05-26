@@ -1,0 +1,372 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   scrapeADS
+#
+# PURPOSE:
+#   Query ADS for bibliographic database entries
+#
+# COMMENTS:
+#
+#
+# INPUTS:
+#   -f name     first author
+#   -a name     other author
+#   -y year     publication year
+#
+# OPTIONAL INPUTS:
+#   -x      Include arXiv preprints, default is 1
+#   -r      refereed journals only, default is 0
+#   -b string   Bibtex key class (X,GL,ST,etc), default is GL
+#
+# OUTPUTS:
+#   author-year.bib Bibliography database
+#
+# EXAMPLES:
+#   > scrapeADS -f Navarro -a Frenk -a White -y 1997
+#   scrapeADS: excluding arXiv preprints from search
+#   scrapeADS: querying ADS for ^Navarro, Frenk, White, 1997
+#   scrapeADS: found 1 abstract(s)
+#   scrapeADS: .
+#   scrapeADS: bibliographic database written to Navarro-Frenk-White-1997.bib
+#
+# BUGS:
+#   - global bibtex key class only
+#   - latex journal macros (eg \mnras) are left in the .bib file
+#   - line 203 is fragile to ADS page formatting
+#   - intermittent error on mac os x:
+#       tcsh: names: Subscript out of range
+#
+# REVISION HISTORY:
+#   2006-04-11  adapted for Mac OS X Marshall (Caltech)
+#   2006-04-07  referee only option Marshall & Treu (Caltech)
+#   2005-06-16  started Marshall (KIPAC)
+#   2005-06-17  cygwin bugs fixed Bridle (UCL)
+#   2005-06-17  bibkey years fixed Marshall (KIPAC) 
+#-
+#=======================================================================
+
+alias echo /bin/echo
+
+# Options and arguments:
+
+set narg = $#argv
+
+unset first
+unset year
+set arxiv = 0
+set bibclass = ''
+set nauthors = 0
+set author = ( )
+set refereed = 0 
+#Escaped default
+unset noclobber
+unalias rm
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -f:        #  first author
+      shift argv
+      set first = $argv[1]
+      shift argv
+      breaksw
+   case -y:        #  year
+      shift argv
+      set year = $argv[1]
+      shift argv
+      breaksw
+   case -a:        #  author
+      shift argv
+      set author = ( $author[1-] $argv[1] )
+      @ nauthors ++
+      shift argv
+      breaksw
+   case -x:        #  arxiv?
+      shift argv
+      set arxiv = 1
+      breaksw
+   case -r:        #  Refereed?
+      shift argv
+      set refereed = 1
+      breaksw
+   case -b:        #  bibtex key class, eg GL, ST, X, O etc
+      shift argv
+      set bibclass = $argv[1]
+      shift argv
+      breaksw
+   case *:         #  command line dross
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+# Catch stupidities:
+
+if ( $narg == 0 ) then
+  echo "scrapeADS: no arguments supplied"
+  echo "         scrapeADS [-x] [-f firstauthor -y year -a author -a author ...] "
+  goto finish
+endif
+
+# Parse inputs:
+
+if ( ! $?year ) then
+#   echo "scrapeADS: no year specified"
+  set year = ""
+# else
+#   echo "scrapeADS: year set to $year"
+endif
+if ( ! $?first) then
+#   echo "scrapeADS: no first author specified"
+  set first = ""
+# else
+#   echo "scrapeADS: first author set to $first"
+endif
+if ( $nauthors == 0 ) then
+#   echo "scrapeADS: no other authors specified"
+  set author = ""
+# else
+#   echo "scrapeADS: other authors: $author"
+endif
+
+if ( $arxiv == 0 ) then
+  echo "scrapeADS: excluding arXiv preprints from search"
+else
+  echo "scrapeADS: including arXiv preprints in search"
+endif
+
+if ( $refereed ) then
+  echo "scrapeADS: refereed papers only"
+endif
+
+#-----------------------------------------------------------------------
+
+# Construct ADS url, and make output filename as well:
+
+# Example ADS URLs:
+#
+# Andersson + Madejski
+# http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&sim_query=YES&aut_xct=NO&aut_logic=AND&obj_logic=OR&author=andersson%0D%0Amadejski&object=&start_mon=&start_year=&end_mon=&end_year=&ttl_logic=OR&title=&txt_logic=OR&text=&nr_to_return=100&start_nr=1&jou_pick=ALL&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&min_score=&sort=SCORE&aut_syn=YES&ttl_syn=YES&txt_syn=YES&aut_wt=1.0&obj_wt=1.0&ttl_wt=0.3&txt_wt=3.0&aut_wgt=YES&obj_wgt=YES&ttl_wgt=YES&txt_wg
+#
+# ^Andersson + Madejski 2004
+# http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&sim_query=YES&aut_xct=NO&aut_logic=AND&obj_logic=OR&author=%5Eandersson%0D%0Amadejski&object=&start_mon=&start_year=2004&end_mon=&end_year=2004&ttl_logic=OR&title=&txt_logic=OR&text=&nr_to_return=100&start_nr=1&jou_pick=ALL&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&min_score=&sort=SCORE&aut_syn=YES&ttl_syn=YES&txt_syn=YES&aut_wt=1.0&obj_wt=1.0&ttl_wt=0.3&txt_wt=3.0&aut_wgt=YES&obj_wgt=YES&ttl_wgt
+#
+# Andersson + Madejski 2004
+# http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&sim_query=YES&aut_xct=NO&aut_logic=AND&obj_logic=OR&author=andersson%0D%0Amadejski&object=&start_mon=&start_year=2004&end_mon=&end_year=2004&ttl_logic=OR&title=&txt_logic=OR&text=&nr_to_return=100&start_nr=1&jou_pick=ALL&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&min_score=&sort=SCORE&aut_syn=YES&ttl_syn=YES&txt_syn=YES&aut_wt=1.0&obj_wt=1.0&ttl_wt=0.3&txt_wt=3.0&aut_wgt=YES&obj_wgt=YES&ttl_wgt=YE
+#
+# Andersson + Madejski 2004 including arxiv
+# http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&db_key=PRE&sim_query=YES&aut_xct=NO&aut_logic=AND&obj_logic=OR&author=andersson%0D%0Amadejski&object=&start_mon=&start_year=2004&end_mon=&end_year=2004&ttl_logic=OR&title=&txt_logic=OR&text=&nr_to_return=100&start_nr=1&jou_pick=ALL&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&min_score=&sort=SCORE&aut_syn=YES&ttl_syn=YES&txt_syn=YES&aut_wt=1.0&obj_wt=1.0&ttl_wt=0.3&txt_wt=3.0&aut_wgt=YES&obj_wgt=YES
+#
+# Andersson + Madejski 2004 including arxiv, only refereed
+# http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&db_key=PRE&sim_query=YES&aut_xct=NO&aut_logic=AND&obj_logic=OR&author=andersson%0D%0Amadejski&object=&start_mon=&start_year=2004&end_mon=&end_year=2004&ttl_logic=OR&title=&txt_logic=OR&text=&nr_to_return=100&start_nr=1&jou_pick=NO&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&min_score=&sort=SCORE&aut_syn=YES&ttl_syn=YES&txt_syn=YES&aut_wt=1.0&obj_wt=1.0&ttl_wt=0.3&txt_wt=3.0&aut_wgt=YES&obj_wgt=YES
+
+if ( $arxiv == 0 ) then
+  set string1 = "http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&sim_query=YES&aut_xct=NO&aut_logic=AND&obj_logic=OR&author="
+else
+  set string1 = "http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&db_key=PRE&sim_query=YES&aut_xct=NO&aut_logic=AND&obj_logic=OR&author="
+endif
+
+if ( $first == "" ) then
+  set string2 = ""
+  set outfile = ""
+  set comment = ""
+else
+  set string2 = "%5E${first}"
+  set outfile = "${first}-"
+  set comment = "^${first}, "
+endif
+
+if ( $nauthors == 0 ) then
+  set author = ""
+  set string3 = ""
+else
+  set string3 = ""
+  set k = 0
+  while ( $k < $nauthors )
+    @ k ++
+    set string3 = "${string3}%0D%0A${author[$k]}"
+    set outfile = "${outfile}${author[$k]}-"
+    set comment = "${comment}${author[$k]}, "
+  end
+endif
+
+if ( $year == "" ) then
+  set outfile = "${outfile}allyears.bib"
+  set comment = "${comment}since records began"
+else
+  set outfile = "${outfile}${year}.bib"
+  set comment = "${comment}${year}"
+endif
+
+# Clobber outfile:
+if ( -e $outfile ) then
+  rm $outfile
+endif
+
+set string4 = "&object=&start_mon=&start_year=${year}&end_mon=&end_year=${year}"
+if ($refereed) then
+set string5 = "&ttl_logic=OR&title=&txt_logic=OR&text=&nr_to_return=100&start_nr=1&jou_pick=NO&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&min_score=&sort=SCORE&aut_syn=YES&ttl_syn=YES&txt_syn=YES&aut_wt=1.0&obj_wt=1.0&ttl_wt=0.3&txt_wt=3.0&aut_wgt=YES&obj_wgt=YES&ttl_wgt=YES&txt_wgt=YES&ttl_sco=YES&txt_sco=YES&version=1"
+else
+set string5 = "&ttl_logic=OR&title=&txt_logic=OR&text=&nr_to_return=100&start_nr=1&jou_pick=ALL&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&min_score=&sort=SCORE&aut_syn=YES&ttl_syn=YES&txt_syn=YES&aut_wt=1.0&obj_wt=1.0&ttl_wt=0.3&txt_wt=3.0&aut_wgt=YES&obj_wgt=YES&ttl_wgt=YES&txt_wgt=YES&ttl_sco=YES&txt_sco=YES&version=1"
+endif
+
+set url = "${string1}${string2}${string3}${string4}${string5}"
+
+echo "scrapeADS: querying ADS for $comment"
+
+#-----------------------------------------------------------------------
+
+# echo "scrapeADS: querying following url:"
+# echo "$url"
+
+# Download search results webpage:
+
+links -source "$url" > htmlfile
+
+# Scan for abstract information: array of urls:
+# BUG FIX- ADS page format changed, needed to edit cut command here
+# BUG FIX- cut command fails under mac os x - "cut: stdin: line too long."                                                     "
+
+# set absurls = `grep http htmlfile | grep ABSTRACT | cut -d'"' -f16`
+
+grep http htmlfile | grep ABSTRACT > httplist
+set k = 0
+set n = `cat httplist | wc -l`
+touch absurlfile ; \rm absurlfile
+while ( $k < $n )
+  @ k ++
+  set line = `head -$k httplist | tail -1`
+  echo "$line[11]" | cut -d'"' -f2 >> absurlfile
+end        
+
+if ( $n == 0 ) then
+  echo "scrapeADS: no abstracts found"
+  goto finish
+else
+  echo "scrapeADS: found $n abstract(s)"
+endif
+rm htmlfile httplist
+
+# Loop through abstract urls, following links down to bibtex page:
+
+echo "scrapeADS: \c"
+set k = 0
+#while ( $k < $#absurls )  # bizarrely doesn't work with cygwin. SLB
+absurlsloop:
+
+  @ k ++
+
+#   set url = "$absurls[$k]"
+#   links -source "$url" > htmlfile
+#   set biburl = `grep BIBTEX htmlfile | cut -d'"' -f2`
+
+# Avoid second (slow) call to links by manipulating url manually:
+   
+#    set absurl =  "$absurls[$k]"
+   set absurl = `head -$k absurlfile | tail -1`
+   
+   set string = `echo "${absurl}" | sed s/nph-data/nph-bib/1 | cut -d"&" -f1`
+   set biburl = "$string"'&data_type=BIBTEX&db_key=AST%26amp;nocookieset=1'
+
+   links -source "$biburl" > htmlfile  
+
+# Construct bibtex key at this stage:
+
+# First count number of lines of authors:
+  set i=0
+  while ( $i < 100 )
+    @ i ++
+    set test = `grep -A $i author htmlfile | grep title | cut -d"=" -f1`
+    if ( $#test != 0 ) then
+      goto collapse
+    endif
+  end
+  collapse:
+  @ nlines = $i
+#  echo "$nlines lines of authors found"
+  @ nlines --
+
+# Now cram all these lines into a single variable, lines:
+  grep -A $nlines author htmlfile > text
+  @ nlines ++
+  set lines = ()
+  set i=0
+#  while ( $i < $nlines )  # bizzarely doesn't work with cygwin. SLB
+  cramloop:
+    @ i ++
+    set line = "`head -$i text | tail -1`"
+    set lines = ( "$lines[1-]" "$line" )
+    if ($i < $nlines) then
+      goto cramloop
+    endif
+ # end
+  rm text
+
+# Now search lines for the authors' names:
+  set names = ( )
+  set name = `echo "${lines}" | cut -d "{" -f 3 | cut -d"}" -f 1`
+  set names = ( $names[1-] $name )
+  set nnames = 1
+  foreach i ( 4 5 6 )
+   set name = `echo "${lines}" | cut -d "{" -f $i | cut -d"}" -f 1`
+   if ( $#name != 0 ) then
+    set names = ( $names[1-] $name[1] )
+    @ nnames ++
+   endif
+  end
+  set bibkey = $bibclass
+  if ( $nnames == 1 || $nnames > 3 ) then
+    set x = `echo $names[1] | cut -b 1-3`
+    set bibkey = "${bibkey}$x"
+  else if ( $nnames == 2 ) then
+    set x = `echo $names[1] | cut -b 1`
+    set bibkey = "${bibkey}$x"
+    set x = `echo $names[2] | cut -b 1`
+    set bibkey = "${bibkey}+$x"
+  else if ( $nnames == 3 ) then
+    foreach i ( 1 2 3 )
+      set x = `echo $names[$i] | cut -b 1`
+      set bibkey = "${bibkey}$x"
+    end
+  endif
+  if ( $nnames > 3 ) then
+    set bibkey = "${bibkey}++"
+  endif
+# Get year (overwritten) from bibtex page too (in case -y wasn't set):  
+  set line = `grep year htmlfile`
+  set year = `echo "${line}" | cut -d "=" -f 2 | cut -d"," -f 1`
+  set x = `echo $year | cut -b 3-4`
+  set bibkey = "${bibkey}$x"
+#   echo "scrapeADS: generated bibtex key $bibkey"
+
+# Trim out bibtex part of webpage, prepend new bibkey, write out:
+
+  set nlines = `cat htmlfile | wc -l`
+  @ nfoot = $nlines - 6
+  if ($nfoot < 0 ) then
+    echo "Error: download may have failed, check htmlfile"
+    goto finish
+  endif   
+
+  echo "@ARTICLE{${bibkey}," >> $outfile
+  tail -$nfoot htmlfile      >> $outfile
+  echo ".\c"
+
+  rm htmlfile
+
+#end
+if ( $k < $n ) then
+  goto absurlsloop
+endif
+
+rm absurlfile
+# Done.
+
+echo " " 
+echo "scrapeADS: bibliographic database written to $outfile"
+
+finish:
+
+#=======================================================================

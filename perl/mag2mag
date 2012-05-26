@@ -1,0 +1,434 @@
+#!/usr/local/bin/perl
+# ======================================================================
+#+
+$usage = "\n
+NAME
+        mag2mag
+
+PURPOSE
+        Given a galaxy of type T at redshift z1 with magnitude m1 in 
+        filter1, compute magnitude m2 in filter2 for the same galaxy at 
+        redshift z2.
+        
+COMMENTS
+        Tricks the hyper-z photometric redshift code into doing this.
+        PGPLOT module requires /usr/local/bin/perl at KIPAC.
+
+USAGE
+        mag2mag [flags] [options]
+
+FLAGS
+        -u           Print this message [0]
+        -q           quiet operation [0]
+        -vega        Input magnitudes are in Vega system [def=AB]
+        -convert     Convert from one magnitude system to the other [def=0]
+        -H0          Hubble constant [70]
+        -Om          Omega matter [0.3]
+        -OL          Omega lambda [0.7]
+        -plot        Illustrate results with a nice plot
+        -noX         Do the plotting quietly (not to xwin)
+        -test        Do an example run (the first one on the list below)
+        -no-clean    Keep various output files for posterity
+        -d          dumps the list of available filters on stderr
+       
+INPUTS
+        -m1       f         input magnitude
+        -f1       s         input filter
+        -z1       f         input redshift
+        -T        s         galaxy spectral type
+        -f2       s         output filter
+        -z2       f         output redshift
+        stdin               Provide compulsory inputs when prompted [Not yet functional]
+
+OPTIONAL INPUTS
+
+OUTPUTS
+        stdout       Useful information
+
+EXAMPLES
+        
+        mag2mag -T CWW_Sbc_ext -m1 25 -f1 'Johnson_H'    -z1 0.6 \\
+                 -plot -vega -convert -f2 'F814W_ACSWFC' -z2 1.4
+
+        mag2mag -T CWW_E_ext -m1 -21.43 -f1 'Johnson_B' -z1 0.0 \\
+                   -plot -vega -convert -f2 'F775W_ACSWFC' -z2 0.321
+
+        mag2mag -T CWW_E_ext -m1 18.302625 -f1 'F775W_ACSWFC' -z1 0.321 \\
+                            -plot -convert -f2 'Johnson_B'    -z2 0.0
+
+DEPENDENCIES
+
+        hyperz:    http://webast.ast.obs-mip.fr/hyperz/
+        pgperl.pm: http://search.cpan.org/search%3fmodule=PGPLOT
+       
+BUGS
+  - accuracy is 0.04 mag, limited by distance modulus / integrator
+  - output spectral units are vague
+  - method 0 and method 1 give DIFFERENT fluxes...
+  - method 1 gives the a constant and wrong absolute magnitude for all z<0.334
+  - binary SED templates do not work in hyperz
+  - .spe files are not written out over full wavelength range
+  - need to email Bolzonella with all this stuff?
+ 
+REVISION HISTORY:
+  2007-02-22  Started Marshall and Gavazzi (UCSB)
+  2009-03-19  Gavazzi added command line flag to dump available filters
+
+\n";
+
+#-
+# ======================================================================
+
+use PGPLOT;
+
+$sdir = $ENV{'SCRIPTUTILS_DIR'};
+require($sdir."/perl/esystem.pl");
+require($sdir."/perl/hz_library.pl");
+require($sdir."/perl/minmax.pl");
+$doproc = 1;
+
+# Parse options:
+
+use Getopt::Long;
+GetOptions("q", \$quiet,
+           "m1=f", \$m1,
+           "f1=s", \$f1,
+           "z1=f", \$z1,
+           "T=s", \$SEDtype,
+           "f2=s", \$f2,
+           "z2=f", \$z2,
+           "vega", \$vega,
+           "convert", \$convert,
+           "H0=f", \$H0,
+           "Om=f", \$Om,
+           "OL=f", \$OL,
+           "plot", \$plot,
+           "noX", \$noX,
+           "test", \$test,
+           "no-clean", \$noclean,
+	   "d", \$ShowFilters,
+           "u", \$help
+           );
+
+(defined($help)) and die "$usage\n";
+
+# First check that hyper-z is installed:
+(defined($ENV{"HYPERZ_DIR"})) or die "Hyper-z is not installed, could not read environment variable \$HYPERZ_DIR\n";
+$hzdir = $ENV{"HYPERZ_DIR"};
+
+$vb = 1;
+(defined($quiet)) and ($vb = 0);
+
+($vb) and print "
+This is mag2mag: using hyperz to predict the magnitude in a given filter
+of a galaxy with a given spectral type at a given redshift, given its magnitude 
+in some other filter at some other redshift, and thus making K-correction 
+tables a thing of the past.\n";
+
+# Make sure we have the compulsory inputs:
+($vb) and print "\nChecking inputs...\n";
+
+(defined($H0)) or $H0 = 70.0;
+(defined($Om)) or $Om =  0.3;
+(defined($OL)) or $OL =  0.7;
+($vb) and print "  Cosmology: H0 = $H0, Om = $Om, OL = $OL\n";
+
+# dumps the list of available filters and exits:
+if(defined($ShowFilters)){
+    $filterresfile = "$sdir/perl/mag2mag_filters.res";
+    @filternames = &hz_read_filter_res_file($filterresfile);
+    print "\n $#filternames filternames: \n".join("\n",@filternames)."\n";
+    exit ;
+}
+
+# Test run!
+if (defined($test)) {
+  $SEDtype = "CWW_Sbc_ext";
+  $m1 = 25;
+  $f1 = "Johnson_H";
+  $z1 = 0.6;
+  $plot = 1;
+  $vega = 1; 
+  $convert = 1;
+  $f2 = "F814W_ACSWFC";
+  $z2 = 1.4;
+  print "\nDoing test run:\n
+  mag2mag -T $f1 -m1 $m1 -f1 $f1    -z1 $z1 \\
+                 -plot -vega -convert -f2 $f2 -z2 $z2\n\n";  
+}
+
+$clean = 1;
+(defined($noclean)) and ($clean = 0);
+
+
+# magtype specfies the system of mags assumed by hyperz for both 
+# inputs and outputs - to convert between the two, the convert option 
+# is required:
+if (defined($vega)) {
+  $magtype = 0;
+  ($vb) and print "  Input magnitudes taken to be in the Vega system\n";
+} else {  
+  $magtype = 1;
+  ($vb) and print "  Input magnitudes taken to be in the AB system\n";
+}  
+if (defined($convert)) {
+  $convert = 1;
+  if ($vb){
+    if ($magtype) {
+      print "  Output magnitudes will be in the Vega system\n";
+    } else {
+      print "  Output magnitudes will be in the AB system\n";
+    }  
+  } 
+} else {  
+  $convert = 0;
+  if ($vb){
+    if ($magtype) {
+      print "  Output magnitudes will be in the AB system\n";
+    } else {
+      print "  Output magnitudes will be in the Vega system\n";
+    }  
+  } 
+}  
+# $bolofilter = "Passe-tout";
+$bolofilter = "Bolometric";
+
+(defined($m1)) or die "  No input magnitude given\n";
+($vb) and print "  Input apparent magnitude = $m1\n";
+
+(defined($z1)) or die "  No input redshift given\n";
+($vb) and print "  Input redshift = $z1\n";
+
+(defined($f1)) or die "  No input filter given\n";
+($vb) and print "  Input filter = $f1\n";
+
+(defined($SEDtype)) or die "  No galaxy SED type given\n";
+($vb) and print "  Input SED type = $SEDtype\n";
+
+# Allow for simple operation:
+# 1) no second redshift -> z2 = z1
+# 2) no second filter -> f2 = f1
+# 3) neither second redshift nor second filter -> just compute abs mag, no plot
+
+# (defined($z2)) or die "  No output redshift given\n";
+if (defined($z2)) {
+  ($vb) and print "  Output redshift = $z2\n";
+} else {
+  $z2 = $z1;
+  ($vb) and print "  Output redshift = input redshift = $z2\n";
+}
+
+# (defined($f2)) or die "  No output filter given\n";
+if (defined($f2)) {
+  ($vb) and print "  Output filter = $f2\n";
+} else {
+  $f2 = $f1;
+  ($vb) and print "  Output filter = input filter = $f2\n";
+}
+
+# Cope with absolute magnitudes:
+$zmin = 0.01;
+
+if (defined($plot)) {
+  $plot = 1;
+} else {
+  $plot = 0;
+}
+if (defined($noX)) {
+  $noX = 1;
+} else {
+  $noX = 0;
+}
+
+# ------------------------------------------------------------------------------
+
+($vb) and print "\nSetting up hyper-z...\n";
+
+# Read the FILTERS.RES file and get an ordered list of filter names
+# We later search this list for the desired filter name, and the array index is 
+# then the filter code.
+
+# $filterresfile = "$hzdir/filters/FILTER.RES";
+
+$filterresfile = "$sdir/perl/mag2mag_filters.res";
+@filternames = &hz_read_filter_res_file($filterresfile);
+
+# print "\n $#filternames filternames: @filternames\n";
+
+# ($filternames) or die "Failed to read $filterresfile\n";
+
+# ------------------------------------------------------------------------------
+# We need a sensible SED normalisation independent of redshift - 
+# hyperz provides the absolute magnitude, but not in the rest-frame. Therefore 
+# we need to use the bolometric absolute magnitude as the invariant quantity:
+
+# Procedure: 
+#   Make a "photometric catalogue" for our galaxy, with one flux entry:
+#     - the input apparent magnitude in the fA, with tiny error
+#     (This is if method=0; the alternative, method=1, uses a 3-entry
+#      mock catalogue, the input magnitude with tiny error, plus dummy 
+#      magnitudes in each of the bluest and reddest filters. The benefit of 
+#      this approach is that the predicted spectra are output over a wide 
+#      wavelength range - but it does not give reliable abs mag results...)
+#   Run hyperz on this catalogue, with assumed spectral type, 
+#     constraining the allowed redshift range to be zero width about z2
+#   Extract the predicted bolometric absolute magnitude from *.z_phot 
+
+($vb) and print "\nCalculating the absolute magnitude in the \"$bolofilter\" band...\n";
+
+# Treat zero redshift as absolute magnitude - need distance modulus to zmin, so that we
+# can do the stable calculation with z=0.05 and assume the colours dont change over 
+# at this redshift:
+if ($z1 == 0.0) {
+  ($vb) and print "  (Shifting zero redshift to z=$zmin for stability)\n";
+  $z1 = $zmin;
+  $DM = &hz_get_distance_modulus($z1,$H0,$Om,$OL,$filterresfile,0);
+  $m1 = $m1 + $DM;
+  $restframe = 1;
+} else {
+  $restframe = 0; 
+}   
+
+$method = 0;
+(&hz_get_absmag($H0,$Om,$OL,$SEDtype,$f1,$m1,$filterresfile,$z1,$magtype,
+         \$absmag,\$flux1,\$efflambda1,\$AB2vega,$bolofilter,$method)) or die "Failed to calculate absolute magnitude\n";
+
+($vb) and print "  (Input) bolometric absolute magnitude M = $absmag\n";
+
+# Don't need to put these back - plot is better with z1=0.05 anyway!
+# if ($restframe){
+#   $m1 = $m1 - $DM;
+#   $z1 = $m1 - $zmin;
+# }  
+
+$m1out = &hz_convert($magtype,$convert,$m1,$AB2vega);
+
+# ------------------------------------------------------------------------------
+
+($vb) and print "\nCalculating the apparent magnitude in filter \"$f2\" for z=$z2...\n";
+
+$m2 = 0;
+
+# Procedure: 
+#   Iterate the output apparent magnitude until the:
+#       predicted bolometric absolute magnitude = observed bolometric absolute magnitude
+#   Do this iteration by binary search; each iteration takes ~0.05s or so.
+
+# Treat zero redshift as absolute magnitude - need distance modulus to zmin, so that we
+# can do the stable calculation with z=0.05 and assume the colours dont change over 
+# at this redshift:
+if ($z2 == 0.0) {
+  ($vb) and print "  (Shifting zero redshift to z=$zmin for stability)\n";
+  $z2 = $zmin;
+  $restframe = 1;
+} else {
+  $restframe = 0; 
+}   
+
+$tol = 0.04;
+
+$m2MAX = 40.0;
+$m2MIN = 0.0;
+$NITERMAX = 50;
+$converged = 0;
+
+$method = 0;
+
+for($j=0;$j<$NITERMAX;$j++) {
+
+  $m2TRIAL = ($m2MAX+$m2MIN)/2.0;
+
+  (&hz_get_absmag($H0,$Om,$OL,$SEDtype,$f2,$m2TRIAL,$filterresfile,$z2,$magtype,
+         \$absmagTRIAL,\$flux2,\$efflambda2,\$AB2vega,$bolofilter,$method)) or die "Failed to calculate absolute magnitude\n";
+
+  $ratio = abs($absmagTRIAL - $absmag)/$tol;
+#   print "$absmag  $absmagTRIAL  $ratio  $m2MIN  $m2TRIAL  $m2MAX\n";
+
+  if (int($ratio)==0){
+    $converged = 1;
+    last;
+  }
+  
+  if ($absmagTRIAL < $absmag) { 
+    $m2MIN = $m2TRIAL;
+  } else {
+    $m2MAX = $m2TRIAL;
+  }
+  
+}
+($converged==0) and die "Binary search for mB failed to converge\n";
+
+$m2 = $m2TRIAL;
+
+# Now convert the magnitude to the rest frame if required:
+if ($restframe){
+  $DM = &hz_get_distance_modulus($z2,$H0,$Om,$OL,$filterresfile,0);
+  $m2 = $m2 - $DM;
+#   $z2 = $z2 - $zmin;
+} 
+ 
+$m2out = &hz_convert($magtype,$convert,$m2,$AB2vega);
+
+if ($vb) {
+  print "  Output apparent magnitude = $m2out\n";
+} else {
+  print "$m2out\n";
+}
+
+($clean) and &esystem("/bin/rm -f hz*phot* hz*param hz*sed hz*txt hz.log 1.spe",1,0);
+($plot) or exit;
+# ------------------------------------------------------------------------------
+
+($vb) and print "\nIllustrating results...\n";
+
+# Rerun magnitude estimation, and save the spectrum file:
+
+# Its not clear that method=1 works at all! But we need it in order to trick 
+# hyperz into giving us ascii text files of the spectra over the whole wavelength 
+# range. Needs testing - we know that for z< 0.334 the absolute magnitude is 
+# wrong, for example - and the fluxes come out different between method 0&1...
+
+$method = 1;
+
+(&hz_get_absmag($H0,$Om,$OL,$SEDtype,$f1,$m1,$filterresfile,$z1,$magtype,
+                \$absmag,\$dummyflux1,\$dummyefflambda1,\$AB2vega,$bolofilter,$method)) 
+                     or die "Failed to calculate absolute magnitude\n";
+$specfile1 = "hz_spectrum1.txt" ;
+rename "1.spe",$specfile1 ;
+
+
+(&hz_get_absmag($H0,$Om,$OL,$SEDtype,$f2,$m2,$filterresfile,$z2,$magtype,
+                \$absmag,\$dummyflux2,\$dummyefflambda2,\$AB2vega,$bolofilter,$method)) 
+                     or die "Failed to calculate absolute magnitude\n";
+$specfile2 = "hz_spectrum2.txt" ;
+rename "1.spe",$specfile2 ;
+
+($vb) and print "  Wavelength/Angstroms  Integrated flux/cgs   with method 1\n";
+($vb) and print "       $dummyefflambda1            $flux1            $dummyflux1\n";
+($vb) and print "       $dummyefflambda2            $flux2            $dummyflux2\n";
+
+# Need pgperl plotting code here - another dependency, but what the hell.
+# I have in mind: both spectra, with integrated flux points overlaid as biggish 
+# circles, perhaps with error bars, one in blue and one in red, wit hthe two 
+# filter transmission curves underlaid in faint grey.
+
+# This is the plot we should be making (with method=0 fluxes)
+# (&hz_plot($specfile1,$z1,$specfile2,$z2,
+#           $efflambda1,$m1,$flux1,
+#           $efflambda2,$m2,$flux2,
+#           $f1,$f2,$filterresfile,$noX)) 
+#              or die "Failed to make plot\n";
+
+# Bu this is th eone we have to make to get the fluxes and spectra to agree:
+(&hz_plot($specfile1,$z1,$specfile2,$z2,
+          $dummyefflambda1,$m1out,$dummyflux1,
+          $dummyefflambda2,$m2out,$dummyflux2,
+          $f1,$f2,$filterresfile,$noX)) 
+             or die "Failed to make plot\n";
+
+($vb) and print "\nPostscript is in mag2mag.ps\n\n";
+($clean) and &esystem("/bin/rm -f hz*phot* hz*param hz*sed hz*txt hz.log 1.spe",1,0);
+
+exit;
+
+# ======================================================================

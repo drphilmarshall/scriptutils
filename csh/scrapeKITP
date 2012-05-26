@@ -1,0 +1,177 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   scrapeKITP
+#
+# PURPOSE:
+#   Scrape kitp online for information about talks.
+#
+# COMMENTS:
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#  -n   days          Show talks in next n days [7]
+#  -p   program       Show talks in this program [lhc08]
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#
+# BUGS:
+#
+# REVISION HISTORY:
+#   2007-02-19  started Marshall (UCSB)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set days = 3
+set program = lhc08
+set help = 0
+
+#Escaped default
+unset noclobber
+unalias rm
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:
+      set help = 1
+      shift argv
+      breaksw
+   case --help:
+      set help = 1
+      shift argv
+      breaksw
+   case -n:
+      shift argv
+      set days = $argv[1]
+      shift argv
+      breaksw
+   case -p:
+      shift argv
+      set program = $argv[1]
+      shift argv
+      breaksw
+   case *:
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+# Catch stupidities, set up variables:
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+set fail = `which curl | & grep "Command not found" | wc -l`
+if ($fail) then
+  echo "${0:t}: curl not found"
+  goto FINISH
+endif
+
+set message = /tmp/kitptalk.email ; \rm -f $message
+
+echo "${0:t}: listing KITP $program program talks for the next $days days" > $message
+
+#-----------------------------------------------------------------------
+
+# Do the scraping:
+
+set webpage = /tmp/kitpwebpage.html ; \rm -f $webpage
+set tmp = /tmp/kitptalk.txt ; \rm -f $tmp
+
+# Download web page as plain text:
+set url = "http://online.kitp.ucsb.edu/online/$program/"
+curl -s "$url" >! $webpage
+
+# Find all dates:
+
+# <td valign='TOP'>10/05, 11:30 a.m.</td>
+set dates = ( `grep -e '[0-9]/[0-2][0-9]' $webpage | \
+                  grep -v '\-' | cut -d'>' -f2 | cut -d',' -f1` )
+
+# and their line numbers:
+set index = ( `grep -n -e '[0-9]/[0-2][0-9]' $webpage | \
+                  grep -v '\-' | cut -d':' -f1` )
+
+# Now compare with today's date (in same format)
+set today = `date +%m/%d`
+  set stoday = `date -d"$today" +%s`
+set lastday = `date -d"$days days"  +%m/%d`
+  set slastday = `date -d"$lastday" +%s`
+set sdates = ( `seq $#dates` )
+foreach i ( `seq $#dates` )
+  set sdates[$i] = `date -d"$dates[$i]" +%s`
+end  
+
+set flag = 0
+foreach i ( `seq $#sdates` )
+  set last = $i
+  if ($stoday == $sdates[$i] && $flag == 0) then
+    @ first = $i
+    set flag = 1
+  else if ($stoday < $sdates[$i] && $flag == 0) then
+    @ first = $i - 1
+    set flag = 1
+  else if ($slastday > $sdates[$i] && $flag == 1) then
+    set flag = 2
+  endif
+end 
+
+if ($first == 0) then
+  echo "${0:t}: no talks scheduled for KITP program $program" >> $message
+  goto EMAIL
+else
+  set ntalks = `echo "$last - $first + 1" | bc`
+  echo "${0:t}: found $ntalks talks:" >> $message
+endif
+
+# OK, got dates - loop over them, parsing webpage:
+
+# <td valign='TOP'>10/04, 3:40 p.m.</td>
+# <td valign='TOP'>Chuck Steidel<br>
+# Caltech</td>
+# <td valign='TOP'>Gas Cooling, Star Formation, and Feedback in High Redshift Galaxies</td>
+# </tr>
+
+foreach i ( `seq $first $last` )
+
+  tail -n +$index[$i] $webpage | head -4 > $tmp
+  
+  set day = `date -d"$dates[$i]" +%A`
+  
+  set when  = `tail -n +1 $tmp | head -1 | cut -d'>' -f2 | cut -d'<' -f1`
+  set who   = `tail -n +2 $tmp | head -1 | cut -d'>' -f2 | cut -d'<' -f1`
+  set from  = `tail -n +3 $tmp | head -1 |                 cut -d'<' -f1 |\
+                  sed s/'\&amp;'/'\&'/g`
+  set about = `tail -n +4 $tmp | head -1 | cut -d'>' -f2 | cut -d'<' -f1`
+
+  echo "  ${day} ${when}\t${who} (${from}) '${about}'" >> $message
+  
+end
+
+EMAIL:
+
+echo "${0:t}: source website: $url" >> $message
+
+# Clean up:
+
+# \rm -f $webpage $tmp
+
+# Now email the output to self!
+
+mail "pjm@physics.ucsb.edu" \
+   -s "Talks @ KITP" < $message                
+
+FINISH:
+
+#=======================================================================

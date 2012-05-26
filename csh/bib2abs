@@ -1,0 +1,163 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   bib2abs
+#
+# PURPOSE:
+#   Read bibtex database, and produce corresponding text file containing all
+#   abstracts.
+#
+# COMMENTS:
+#   See also bib2pdf to download papers
+#
+# INPUTS:
+#   database.bib      bibtex database file, containing adsurl entries
+#
+# OPTIONAL INPUTS:
+#   -h --help
+#
+# OUTPUTS:
+#   $database:r.abs   abstracts file
+#
+# EXAMPLES:
+#
+# BUGS:
+#   - only uses last database on command line, does not loop over many
+#
+#
+# REVISION HISTORY:
+#   2006-04-26  started Marshall (KIPAC)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set narg = $#argv
+set help = 0
+
+#Escaped default
+unset noclobber
+unalias rm
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case *:         #  databases
+      set database = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# Catch stupidities:
+
+if ( $narg == 0 ) then
+  echo "bib2abs: no bibtex databse supplied"
+  echo "         bib2abs database.bib "
+  goto finish
+endif
+set fail = `which lynx | & grep "Command not found" | wc -l`
+if ($fail) then
+  echo "bib2abs: lynx not found"
+  goto finish
+endif
+
+echo "bib2abs: finding abstracts for references in $database"
+
+# Get url list:
+
+set urls = `cat $database | \
+            grep adsurl | \
+            cut -d'{' -f 2 | cut -d'}' -f 1`
+
+# Prepare file:
+
+set outfile = $database:r.abstracts.txt
+touch $outfile ; rm $outfile ; touch $outfile
+
+#-----------------------------------------------------------------------
+
+# Loop over urls, downloading abstracts:
+
+set k = 0
+
+while ( $k < $#urls )
+
+@ k ++
+
+set bibcode = `echo "$urls[$k]" | cut -d'=' -f2 | cut -d'&' -f1`
+echo "bib2abs: querying bibcode $bibcode"
+
+echo "\
+********************************************************************************\
+   $bibcode\
+" >> $outfile
+
+# Download search results webpage:
+
+lynx --dump --nolist "$urls[$k]" > webfile
+
+# Scan for author, title, and journal information:
+
+set titleline = `cat webfile | grep -n 'Title:' | head -1 | cut -d':' -f1`
+set authline = `cat webfile | grep -n 'Author:' | head -1 | cut -d':' -f1`
+if ($#authline == 0) set authline = `cat webfile | grep -n 'Authors:' | head -1 | cut -d':' -f1`
+set affilline = `cat webfile | grep -n 'Affiliation:' | head -1 | cut -d':' -f1`
+set journline = `cat webfile | grep -n 'Publication:' | head -1 | cut -d':' -f1`
+if ($#affilline == 0) set affilline = $journline
+set publine = `cat webfile | grep -n 'Publication Date:' | head -1 | cut -d':' -f1`
+
+@ dn = $affilline - $titleline
+cat webfile | tail -n +$titleline | head -$dn >> $outfile
+
+@ dn = $publine - $journline
+cat webfile | tail -n +$journline | head -$dn >> $outfile
+
+# Now get abstract:
+
+set abstrline = `grep -n Abstract webfile | \
+grep -v ADS | \
+grep -v Similar | \
+grep -v Translate | \
+grep -v Copyright | \
+grep -v Text | \
+tail -1 | \
+cut -d':' -f 1`
+@ abstrline = $abstrline + 2
+
+tail -n +$abstrline webfile > absfile
+set dn = `grep -n '_' absfile | head -1 | cut -d':' -f 1`
+@ dn --
+
+echo " " >> $outfile
+head -$dn absfile >> $outfile
+
+end
+# Done.
+
+echo "\
+********************************************************************************\
+" >> $outfile
+
+echo "bib2abs: $#urls abstracts written to $outfile"
+
+\rm -f webfile absfile
+
+finish:
+
+#=======================================================================

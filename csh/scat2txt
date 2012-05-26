@@ -1,0 +1,169 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   scat2txt
+#
+# PURPOSE:
+#   Take SExtractor catalogue and chop out columns with names given
+#
+# COMMENTS:
+# 
+#
+# USAGE:
+#       scat2txt -n PARAM1 -n PARAM2 ... scatfile [-o outfile]
+#
+# INPUTS:
+#   scatfile               Input SExtractor catalogue (ASCII-HEAD)
+#
+# OPTIONAL INPUTS:
+#   -o --output            Write output to a new file [scatfile:r_etc etc]
+#   --flush                Write output to stdout
+#   -v --verbose    
+#   -h --help
+#
+# OUTPUTS:
+#   outfile (or stdout with --stdout)
+#
+# EXAMPLES:
+#   scat2txt -v -n FWHM -n MAG_AUTO data.cat
+#     scat2txt: Extracting columns from data.cat
+#     scat2txt: Column 33 contains variable FWHM
+#     scat2txt: Column 47 contains variable MAG_AUTO
+#     scat2txt: Writing 2-column text file to data_FWHM_MAG_AUTO.txt 
+#     scat2txt: file is 2567 lines long
+#
+# DEPENDENCIES:
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2007-12-18  started Marshall (UCSB)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set vb = 0
+set outfile = 0
+set flush = 0
+set file = 0
+set params = ()
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -v:           #  verbose operation
+      set vb = 1
+      shift argv
+      breaksw
+   case --{verbose}:  
+      set vb = 1
+      shift argv
+      breaksw
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -n:           #  use tr instead of sed
+      shift argv
+      set params = ( $params $argv[1] )
+      shift argv
+      breaksw
+   case -o:           #  output to new file
+      shift argv
+      set outfile = $argv[1]
+      shift argv
+      breaksw
+   case --{output}:        
+      shift argv
+      set outfile = $argv[1]
+      shift argv
+      breaksw
+   case --{flush}:        
+      set flush = 1
+      shift argv
+      breaksw
+   case *:            #  list of files to be cut up - only last one is used...
+      set file = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help || $file == 0 || $#params == 0) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+if ($vb) echo "${0:t}: Extracting columns from $file:t"
+if ( ! -e $file ) then
+  echo "${0:t}: ERROR: input file $file not found"
+  goto FINISH
+endif  
+
+set index = ( )
+foreach i ( `seq $#params` )
+  set j = `grep -e '#' $file | grep $params[$i] | awk '{print $2}'`
+  if ($#j == 0) then
+    echo "${0:t}: ERROR: variable $params[$i] not found"
+    goto FINISH
+  else
+    set index = ( $index $j )  
+  endif  
+  if ($vb) echo "${0:t}: Column $index[$i] contains variable $params[$i]"
+end
+
+set paramfiles =  ( `seq $#params` )
+
+foreach i ( `seq $#params` )
+  if ($OSTYPE == darwin) sleep 1
+  set now = `date '+%Y%m%d-%H%M%S.%N'`
+  set paramfiles[$i] = /tmp/scat2txt.$now.tmp
+  grep -v '#' $file | awk '{print $'$index[$i]'}' > $paramfiles[$i]
+#   wc -l $paramfiles[$i]
+end
+
+# Prepare output file:
+
+if ($flush == 0) then
+  if ($outfile == 0) then
+    set outfile = ${file:r}
+    foreach i ( `seq $#params` )
+      set outfile = ${outfile}_${params[$i]}
+    end
+    set outfile = ${outfile}.txt 
+  endif
+  if ($vb) echo "${0:t}: Writing $#params-column text file to $outfile,"
+endif
+
+if ($OSTYPE == darwin) sleep 1
+set now = `date '+%Y%m%d-%H%M%S.%N'`
+set tmpfile = /tmp/scat2txt.$now.tmp
+ 
+# Paste columns together: 
+ 
+paste $paramfiles > $tmpfile
+
+if ($flush) then
+  cat $tmpfile
+else
+  mv -f $tmpfile $outfile
+  set n = `cat $outfile | wc -l`
+  if ($vb) echo "${0:t}: file is $n lines long"
+endif
+
+
+FINISH:
+
+#=======================================================================

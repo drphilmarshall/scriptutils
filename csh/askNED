@@ -1,0 +1,495 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   askNED
+#
+# PURPOSE:
+#   Query NED for object information
+#
+# COMMENTS:
+#
+# USAGE:
+#       askSDSS [-h][-t type -r radii] ra dec
+#
+# INPUTS:
+#   ra dec                 position of object in J2000 degrees or sexagesimal
+#
+# OPTIONAL INPUTS:
+#   -t --type              object type (eg ZwCl etc)
+#   -r --radius            search radius / arcmin [2]
+#   -h --help
+#   -v --verbose
+#
+# OUTPUTS:
+#   Plain text catalog of object name, objtype, ra/dec, z, magnitude
+#   with file name following convention such as:
+#
+#     J013435.67-093102.7_0.1arcmin.txt
+#
+# COMMENTS:
+#   Here are some possible object types to query for:
+#
+#     GClusters
+#     Radio
+#     QSO
+#     Galaxies
+#
+#   If you mis-spell these, NED defaults to giving you all objects!
+#   This is why the apparently redundant "objtype" is returned in the
+#   catalog.
+#
+# EXAMPLES:
+#
+# 1) CL0024+165 cluster:
+#
+#     askNED -v -r 5  6.6500  17.1434
+# 
+# askNED: query the NED website for objects of type GClusters
+# askNED: search radius / arcsec: 5
+# askNED: ra (deg): 6.6500
+# askNED: dec (deg): 17.1434
+# askNED: ra (J2000): 00 26 36.00
+# askNED: dec (J2000): +17 08 36.2
+# askNED: IAU name of search position: J002636.00+170836.2
+# askNED: all done
+# # name                ra             dec    objtype            z  mag/filter
+# ZwCl0024.0+1652 6.65005 17.14336        GClstr  0.390000        18.1
+#
+# 
+# 2) PMNJ0134-0931 lensed quasar:
+# 
+#     askNED -v -t Radio -r 0.1 23.64863  -9.51744
+# 
+# askNED -v -t Radio -r 0.1 23.64863 -9.51744
+# askNED: query the NED website for objects of type Radio
+# askNED: search radius / arcmin: 0.1
+# askNED: ra (deg): 23.64863
+# askNED: dec (deg): -9.51744
+# askNED: ra (J2000): 01 34 35.67
+# askNED: dec (J2000): -09 31 02.7
+# askNED: IAU name of search position: J013435.67-093102.7
+# askNED: all done
+# # name                ra             dec    objtype            z  mag/filter
+# PKS0132-097     23.64861        -9.51746        QSO     2.225000        20.0
+# PMNJ0134-0931:[WLC2002]A        23.64861        -9.51747        RadioS  -99    -99
+# PMNJ0134-0931:[WLC2002]C        23.64864        -9.51748        RadioS  -99    -99
+# PMNJ0134-0931:[WLC2002]E        23.64869        -9.51741        RadioS  -99    -99
+# PMNJ0134-0931:[WLC2002]B        23.64859        -9.51751        RadioS  -99    -99
+# PMNJ0134-0931:[WLC2002]D        23.64877        -9.51758        RadioS  -99    -99
+# PMNJ0134-0931:[WLC2002]F        23.64876        -9.51759        RadioS  -99    -99
+#   
+#   
+# DEPENDENCIES:
+#   
+#   skycoor, wget
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2008-03-07  started Marshall (UCSB)
+#   2008-04-03  first working version by PJM and TT (UCSB)
+#-
+#=============================================================================
+# The basic search results url is:
+#
+#   http://nedwww.ipac.caltech.edu/cgi-bin/nph-objsearch?in_csys=Equatorial&in_equinox=J2000.0&lon=6.6487083d&lat=17.162353d&radius=3&search_type=Near+Position+Search&out_csys=Equatorial&out_equinox=J2000.0&obj_sort=Distance+to+search+center&of=pre_text&zv_breaker=30000.0&list_limit=5000&img_stamp=NO&z_constraint=Unconstrained&z_value1=&z_value2=&z_unit=z&ot_include=ANY&in_objtypes1=GClusters&nmp_op=ANY&name_prefix3=ZwCl
+# 
+# The output page looks like this:
+# 
+# <A NAME="objlist">
+# <h3>1 objects found in NED. &nbsp;&nbsp;&nbsp;<a href=/results/skyfile_16920.html>Skyplot(first 100)</a></h3>
+# <PRE><strong>
+#  Row          Object Name                 EquJ2000.0               Velocity/Redshift   Separ.               Number of                                  Row 
+#  No.     (* => Essential Note)       RA               DEC  Type     km/s       z   Qual arcmin Refs Notes Phot Posn Vel/z Diam Assoc Images   Spectra  No. 
+# </strong><A HREF=/cgi-bin/nph-objsearch?search_type=Obj_id&objid=153776&objname=1&img_stamp=YES TARGET="ned_dw">1  </A>  ZwCl 0024.0+1652               00h26m36.0s +17d08m36s GClstr >30000  0.390000     &nbsp;   1.1 <A HREF=/cgi-bin/nph-datasearch?search_type=Ref_id&objid=153776&objname=ZwCl%200024.0%2B1652 TARGET="ned_dw"> 121</A>     0 <A HREF=/cgi-bin/nph-datasearch?search_type=Photo_id&objid=153776&objname=ZwCl%200024.0%2B1652 TARGET="ned_dw">   1</A>    0  <A HREF=/cgi-bin/nph-datasearch?search_typ
+# 
+# </pre>
+# </A>
+# 
+# The detailed information page is at
+# 
+#   http://nedwww.ipac.caltech.edu//cgi-bin/nph-objsearch?search_type=Obj_id&objid=153776) 
+#
+# and looks like this:
+# 
+# <h2>Detailed Information for Object No. </h2>
+# <TABLE BORDER=1>
+# <TR><TD><strong>Object Names                  </strong></TD><TD><strong>Type  </strong></TD><TD><strong>Object Names                  </strong></TD><TD><strong>Type  </strong></TD></TR>
+# <TR><TD><A HREF="/cgi-bin/catdef?prefix=ZwCl" target=help>ZwCl</A> 0024.0+1652              </TD><TD>GClstr</TD><TD><A HREF="/cgi-bin/catdef?prefix=CL" target=help>CL</A> 0024+1654                  </TD><TD>GClstr</TD><TR><TD><A HREF="/cgi-bin/catdef?prefix=CL" target=help>CL</A> 0024.0+1652                </TD><TD>GClstr</TD><TD>&nbsp;</TD><TD>&nbsp;</TD></TR>
+# 
+# </TR>
+# </TABLE>
+# <br>
+# <p>
+# <strong>Position Reference:</strong><a href=/cgi-bin/nph-ex_refcode?refcode=1965CGCG5.C...0000Z TARGET="ned_dw">1965CGCG5.C...0000Z</a><PRE>
+# <strong>Reference    Frame     Longitude    Latitude        RA           DEC      Uncertainty Ellipse (arcsec)</strong>
+# <strong>                       (degrees)   (degrees)                                Major     Minor   PA(deg)</strong>
+# Equatorial (B1950.0)      6.0000     16.8667     00h24m00s     +16d52.0m  1.50E+02  1.50E+02    0
+# Equatorial (J2000.0)      6.6500     17.1434     00h26m36s     +17d08.6m  1.50E+02  1.50E+02    0
+# Ecliptic   (B1950.0)     12.2830     13.0846                              1.50E+02  1.50E+02    0
+# Ecliptic   (J2000.0)     12.9801     13.0865                              1.50E+02  1.50E+02    0
+# Galactic                114.4792    -45.3203                              1.50E+02  1.50E+02    0
+# SuperGalactic           311.3194     11.1612                              1.50E+02  1.50E+02    0
+# </PRE>
+# <br>
+# <PRE>
+# <strong>Basic Data </strong>
+# 
+# Helio. Radial Velocity     :    116919 km/s       
+# Redshift                   :  0.390000           <a href=/cgi-bin/nph-ex_refcode?refcode=1993MNRAS.263..628S TARGET="ned_dw">1993MNRAS.263..628S</a>
+# Magnitude/Rank of Member   : 18.1/?     
+# Cluster Diameter (arcmin)  :    6.
+# Morphology [System]        : Compact [Zw]           
+# Pop. or  [Richness Class]  :    30
+# 
+# 
+# <strong><a href=/help/objresult_help.html#DerivedValues>Derived Values</a></strong><img src="/pics/new.gif" border=0 alt="New" align=bottom>
+# 
+# <strong>Calculated and Corrected Velocities</strong>
+# V (Heliocentric)           :  116919  km/s                <a href=/cgi-bin/nph-ex_refcode?refcode=1993MNRAS.263..628S TARGET="ned_dw">1993MNRAS.263..628S</a>
+# V (Galactocentric GSR)     :  117060 +/-      6 km/s      <a href=/cgi-bin/nph-ex_refcode?refcode=1991RC3.9.C...0000d TARGET="ned_dw">1991RC3.9.C...0000d</a>
+# V (Local Group)            :  117141 +/-     13 km/s      <a href=/cgi-bin/nph-ex_refcode?refcode=1996AJ....111..794K TARGET="ned_dw">1996AJ....111..794K</a>
+# 
+# V (3K CMB)                 :  116572 +/-     24 km/s      <a href=/cgi-bin/nph-ex_refcode?refcode=1996ApJ...473..576F TARGET="ned_dw">1996ApJ...473..576F</a>
+# V (Virgo Infall only)      :  116969 +/-     18 km/s      <a href=/cgi-bin/nph-ex_refcode?refcode=2000ApJ...529..786M TARGET="ned_dw">2000ApJ...529..786M</a>
+# V (Virgo + GA only)        :  116635 +/-     29 km/s      <a href=/cgi-bin/nph-ex_refcode?refcode=2000ApJ...529..786M TARGET="ned_dw">2000ApJ...529..786M</a>
+# V (Virgo + GA + Shapley)   :  116565 +/-     30 km/s      <a href=/cgi-bin/nph-ex_refcode?refcode=2000ApJ...529..786M TARGET="ned_dw">2000ApJ...529..786M</a>
+# 
+# <strong>Hubble Flow Distance and Distance Modulus (where H = 73 +/- 5 km/sec/Mpc)</strong>
+# D (Galactocentric GSR)     :  1603.6 +/-  112.2 Mpc      (m-M) = 41.03 +/- 0.15 mag
+# D (Local Group)            :  1604.7 +/-  112.3 Mpc      (m-M) = 41.03 +/- 0.15 mag
+# D (3K CMB)                 :  1596.9 +/-  111.8 Mpc      (m-M) = 41.02 +/- 0.15 mag
+# D (Virgo Infall only)      :  1602.3 +/-  112.2 Mpc      (m-M) = 41.02 +/- 0.15 mag
+# D (Virgo + GA only)        :  1597.7 +/-  111.8 Mpc      (m-M) = 41.02 +/- 0.15 mag
+# D (Virgo + GA + Shapley)   :  1596.8 +/-  111.8 Mpc      (m-M) = 41.02 +/- 0.15 mag
+# 
+# <strong>Scale at Hubble Flow Distances</strong>
+# 
+# Scale (Galactocentric GSR) :    7774 pc/arcsec =  7.774 kpc/arcsec = 466.46 kpc/arcmin =  27.99 Mpc/degree
+# Scale (Local Group)        :    7780 pc/arcsec =  7.780 kpc/arcsec = 466.78 kpc/arcmin =  28.01 Mpc/degree
+# Scale (3K CMB)             :    7742 pc/arcsec =  7.742 kpc/arcsec = 464.51 kpc/arcmin =  27.87 Mpc/degree
+# Scale (Virgo Infall only)  :    7768 pc/arcsec =  7.768 kpc/arcsec = 466.09 kpc/arcmin =  27.97 Mpc/degree
+# Scale (Virgo + GA only)    :    7746 pc/arcsec =  7.746 kpc/arcsec = 464.76 kpc/arcmin =  27.89 Mpc/degree
+# Scale(Virgo + GA + Shapley):    7741 pc/arcsec =  7.741 kpc/arcsec = 464.48 kpc/arcmin =  27.87 Mpc/degree
+# 
+# <strong>Cosmology-Corrected Quantities [H_o = 73 km/sec/Mpc, Omega(matter) = 0.27, Omega(vacuum) = 0.73]</strong>
+# <strong>[Redshift 0.388843 corrected to the Reference Frame defined by the 3K Microwave Background Radiation]</strong>
+# Luminosity Distance        :     2033 Mpc      (m-M) = 41.54 mag
+# Angular-Size Distance      :     1054 Mpc      (m-M) = 40.11 mag
+# Co-Moving Radial Distance  :     1464 Mpc      (m-M) = 40.83 mag
+# Co-Moving Tangential Dist. :     1464 Mpc      (m-M) = 40.83 mag
+# Co-Moving Volume           : 13.1 Gpc^3
+# Light Travel-Time          :    4.051 Gyr
+# Age at Redshift 0.388843   :    9.248 Gyr
+# Age of Universe            :   13.299 Gyr
+# Scale (Cosmology Corrected):    5110 pc/arcsec =  5.110 kpc/arcsec = 306.59 kpc/arcmin =  18.40 Mpc/degree
+# Surface Brightness Dimming : Flux Density per Unit Area =  0.26877; Magnitude per Unit Area = 1.427 mag
+# 
+# 
+# 
+# <strong>Foreground Galactic Extinction</strong>
+# Galactic Extinction (Burstein & Heiles): A_B = 0.140 mag  <a href="/cgi-bin/nph-ex_refcode?refcode=1982AJ.....87.1165B" TARGET="ned_dw">1982AJ.....87.1165B</a> 
+# Galactic Extinction (Schlegel et al.):   A_B = 0.246 mag  <a href="http://adsabs.harvard.edu/cgi-bin/nph-bib_query?bibcode=1998ApJ...500..525S&db_key=AST&high=3290e5e17909355"TARGET="ned_dw">1998ApJ...500..525S</a>
+#  E(B-V) = 0.057 mag.
+#  The values listed below are calculated following Schlegel et al. Appendix B.
+#  See <a href="/help/objresult_help.html#extinc" target=help>Notes on Galactic Extinction</a> for important caveats.
+#  Bandpass           U     B     V     R     I     J     H     K     L'
+#  Wavelength [um]  0.34  0.44  0.54  0.65  0.80  1.27  1.67  2.22  3.81
+#  A_lambda  [mag]  0.310 0.246 0.189 0.153 0.111 0.051 0.033 0.021 0.009
+#  
+#=============================================================================
+# Options and arguments:
+
+set narg = $#argv
+
+# Set defaults:
+
+unset ra0
+unset dec0
+
+set objtype = GClusters 
+set klobber = 0 
+set hms = 0
+set maxsep = 10
+set help = 0
+set verb = 0
+
+# Escape shell defaults
+unset noclobber
+unalias rm
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -v:        
+      shift argv
+      set verb = 1
+      breaksw
+   case --{verb}:        
+      shift argv
+      set verb = 1
+      breaksw
+   case -r:        #  search radius
+      shift argv
+      set maxsep = $argv[1]
+      shift argv
+      breaksw
+   case --{search-radius}:
+      shift argv
+      set maxsep = $argv[1]
+      shift argv
+      breaksw
+   case -t:        #  object type
+      shift argv
+      set objtype = $argv[1]
+      shift argv
+      breaksw
+   case --{object-type}:
+      shift argv
+      set objtype = $argv[1]
+      shift argv
+      breaksw
+   case --{hms}:   #  Coords input in hms dms?       
+      shift argv
+      set hms = 1
+      breaksw
+   case -x:        #  Clobber?
+      shift argv
+      set klobber = 1
+      breaksw
+   case --{clobber}:        
+      shift argv
+      set klobber = 1
+      breaksw
+   case *:         #  ra and dec!
+      set ra0 = $argv[1]
+      shift argv
+      set dec0 = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+SETUP:
+
+if ($help || $narg < 2) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+if ($verb) echo "askNED: query the NED website for objects of type $objtype"
+
+# Check for software availabity:
+
+set nowget = `which wget |& grep "not found" | wc -l`
+if ($nowget) then
+  echo "${0:t:r}: ERROR: no wget for submitting data to web"
+  goto FINISH
+endif
+set noskycoor =  `which skycoor |& grep "not found" | wc -l` 
+if ($noskycoor) then
+  echo "${0:t:r}: ERROR: no skycoor program for translating coordinates"
+  echo "${0:t:r}: You can download it from: \
+  http://tdc-www.harvard.edu/software/wcstools/skycoor.html"
+  goto FINISH
+endif
+
+
+# Parse inputs:
+
+if ( ! $?ra0 ) then
+  echo "askNED: no RA specified"
+  goto FINISH
+endif
+if ( ! $?dec0 ) then
+  echo "askNED: no dec specified"
+  goto FINISH
+endif
+
+# Convert to degrees:
+unset rahms
+unset dechms
+if ($hms) then
+
+#   set rahms =  `echo "$ra0" | sed s/:/\ /g`
+#   set dechms = `echo "$dec0" | sed s/\:/\ /g`
+#   set positive = 1
+#   set test = `echo $dec0 | grep '-' | wc -l`
+#   if ($test) set positive = 0    
+#    
+#   set x = ( $rahms )
+#   foreach i ( `seq 3` )
+#     set a = `echo $x[$i] | cut -c 1` ; set b = `echo $x[$i] | cut -c 2` 
+#     if ($a == 0) set x[$i] = $b
+#   end
+#   set ra0 = `echo "15.0 * ($x[1] + $x[2]/60.0 + $x[3]/3600.0)" | bc -l | cut -c 1-11`
+#   set a = `echo $ra0 | cut -c 1` ; set b = `echo $ra0 | cut -c 2-`
+#   if ( $a == '.' ) set ra0 = "0.$b"
+# 
+#   set x = ( `echo $dechms | sed s/-//g | sed s/+//g` )
+#   foreach i ( `seq 3` )
+#     set a = `echo $x[$i] | cut -c 1` ; set b = `echo $x[$i] | cut -c 2` ; set c = `echo $x[$i] | cut -c 3` 
+#     if ($a == '-') then
+#       set x[$i] = $b$c
+#       set positive = 0
+#       if ($b == 0) set x[$i] = $c
+#     endif  
+#     if ($a == 0) set x[$i] = $b
+#   end
+#   set dec0 = `echo "$x[1] + $x[2]/60.0 + $x[3]/3600.0" | bc -l | cut -c 1-12`
+#   set a = `echo $dec0 | cut -c 1` ; set b = `echo $dec0 | cut -c 2-` 
+#   if ( $a == '.' ) set dec0 = 0.$b
+#   if ( ! $positive ) set dec0 = '-'$dec0
+
+  set rahms =  `echo "$ra0" | sed s/:/\ /g`
+  set dechms = `echo "$dec0" | sed s/\:/\ /g`
+  set line = `skycoor -d $ra0 $dec0`
+  set ra0 = $line[1]
+  set dec0 = $line[2]
+
+  if ($verb) echo "askNED: required position: $ra0 $dec0"
+
+endif 
+
+# Make sure ra0 and dec0 have acceptable precision (bug caught by Kasper
+# Schmidt):
+set ra0 = `echo $ra0 | awk '{printf "%.10s\n",$1}'`
+set dec0 = `echo $dec0 | awk '{printf "%.9s\n",$1}'`
+
+
+if ($verb) echo "askNED: search radius / arcmin: $maxsep"
+if ($klobber) echo "askNED: clobbering existing files"
+
+#-----------------------------------------------------------------------
+IAUNAME:
+
+if ( ! $?rahms ) then
+#   set rah = `echo "$ra0 / 15.0" | bc -l | cut -d'.' -f1`
+#   set test = `echo $rah | wc -c` ; if ($test == 1) set rah = 0
+#   set ram = `echo "($ra0 - $rah * 15.0)* 60.0 / 15.0" | bc -l | cut -d'.' -f1`
+#   set ras = `echo "scale = 2; ($ra0 - $rah * 15.0 - $ram * 15.0 / 60.0) * 3600.0 / 15.0" | bc -l | cut -c1-5`
+#   set test = `echo $rah | wc -c` ; if ($test == 2) set rah = 0$rah
+#   set test = `echo $ram | wc -c` ; if ($test == 2) set ram = 0$ram
+#   set test = `echo $ras | cut -d'.' -f1 | wc -c` ; if ($test == 2) set ras = 0$ras
+  set line = `skycoor $ra0 $dec0`
+  set rahms = `echo "$line[1]" | sed s/:/\ /g`
+endif 
+set rah = $rahms[1]
+set ram = $rahms[2] 
+set ras = `echo "$rahms[3]" | cut -c 1-5`
+
+if ( ! $?dechms ) then
+#   set positive = `echo "($dec0 / sqrt($dec0*$dec0) + 1.0)/2.0" | bc -l | cut -d'.' -f1`
+#   if ($positive) then
+#     set decsign = '+'
+#   else
+#     set decsign = '-'
+#   endif 
+#   set dec0 = `echo $dec0 | sed s/-//g`
+#   set decd = `echo "$dec0" | cut -d'.' -f1`
+#   set decm = `echo "($dec0 - $decd)* 60.0" | bc -l | cut -d'.' -f1`
+#   set decs = `echo "scale = 2; ($dec0 - $decd - $decm / 60.0) * 3600.0" | bc -l | cut -c1-4`
+#   set test = `echo $decd | wc -c` ; if ($test == 2) set decd = 0$decd
+#   set test = `echo $decm | wc -c` ; if ($test == 2) set decm = 0$decm
+#   set test = `echo $decs | cut -d'.' -f1 | wc -c` 
+#   if ($test == 2) then
+#     set decs = `echo "0$decs" | cut -c1-4`
+#   endif
+# # Don't forget to put sign back!
+#   set dec0 = `echo "0.0 $decsign $dec0" | bc -l`
+  set line = `skycoor $ra0 $dec0`
+  set dechms = `echo "$line[2]" | sed s/:/\ /g`
+endif
+set decd = $dechms[1]
+set decm = $dechms[2] 
+set decs = `echo "$dechms[3]" | cut -c 1-4`
+set decsign = ''
+ 
+if ($verb) echo "askNED: ra (deg): $ra0"
+if ($verb) echo "askNED: dec (deg): $dec0"
+
+if ($verb) echo "askNED: ra (J2000): $rah $ram $ras"
+if ($verb) echo "askNED: dec (J2000): $decd $decm $decs"
+
+set name = "J$rah$ram$ras$decsign$decd$decm$decs"
+
+if ($verb) echo "askNED: IAU name of search position: $name"
+
+set fileroot = ${name}_${maxsep}arcmin
+
+# ----------------------------------------------------------------------
+CREATEURL:
+
+# Examples:
+# http://nedwww.ipac.caltech.edu/cgi-bin/nph-objsearch?in_csys=Equatorial&in_equinox=J2000.0&lon=6.6487083d&lat=17.162353d&radius=3&search_type=Near+Position+Search&out_csys=Equatorial&out_equinox=J2000.0&obj_sort=Distance+to+search+center&of=ascii_bar&zv_breaker=30000.0&list_limit=5000&img_stamp=NO&z_constraint=Unconstrained&z_value1=&z_value2=&z_unit=z&ot_include=ANY&in_objtypes1=GClusters&nmp_op=ANY&name_prefix3=ZwCl
+# http://nedwww.ipac.caltech.edu/cgi-bin/nph-objsearch?in_csys=Equatorial&in_equinox=J2000.0&lon=23.64863d&lat=-9.51744d&radius=0.1&hconst=73&omegam=0.27&omegav=0.73&corr_z=1&z_constraint=Unconstrained&z_value1=&z_value2=&z_unit=z&ot_include=ANY&in_objtypes2=Radio&search_type=Near+Position+Search&nmp_op=ANY&out_csys=Equatorial&out_equinox=J2000.0&obj_sort=Distance+to+search+center&of=pre_text&zv_breaker=30000.0&list_limit=5&img_stamp=YES
+
+set url = ""
+set url = "${url}http://nedwww.ipac.caltech.edu/cgi-bin/nph-objsearch?in_csys=Equatorial&in_equinox=J2000.0&"
+set url = "${url}lon=${ra0}d&"
+set url = "${url}lat=${dec0}d&"
+set url = "${url}radius=${maxsep}&"
+set url = "${url}search_type=Near+Position+Search&out_csys=Equatorial&out_equinox=J2000.0&obj_sort=Distance+to+search+center&of=ascii_bar&zv_breaker=30000.0&list_limit=5000&img_stamp=NO&z_constraint=Unconstrained&z_value1=&z_value2=&z_unit=z&ot_include=ANY&in_objtypes2=${objtype}&nmp_op=ANY"
+
+set txtfile = ${fileroot}_NED.txt
+set logfile = $txtfile.log
+
+# set output = `grep HREF=#ObjNo htmlfile`
+
+wget "$url" -O $txtfile -o $logfile
+
+if ($verb) echo "askNED: URL = $url"
+
+# ----------------------------------------------------------------------
+PARSING:
+
+set outfile = $fileroot.txt
+
+# Now, read this file and find out the relevant entries:
+
+set fail = `grep 'No object found' $txtfile | tail -1 | wc -l`
+if ($fail) then 
+  echo 'No objects found' > $outfile
+  goto ENDGAME
+endif
+
+# Print a table header:
+
+echo "# name                ra             dec    objtype            z  mag/filter" > $outfile
+
+# Find the first line of the table:
+
+set n = `grep -n "Velocity" $txtfile | cut -d ':' -f1`
+
+# Then print the data lines of the table, cutting out what we want:
+
+@ n++ 
+tail -n +$n $txtfile | \
+sed s/' '/''/g | \
+sed s/'||'/'|-99|'/g | sed s/'||'/'|-99|'/g | \
+cut -d '|' -f2,5,3,4,7,9 | \
+sed s/'|'/\\' '/g >> $outfile
+
+# ----------------------------------------------------------------------
+ENDGAME:
+
+if ($verb) echo "askNED: all done"
+
+cat $outfile
+
+#  Clean up:
+\rm -f $txtfile $logfile
+
+# ======================================================================
+FINISH:

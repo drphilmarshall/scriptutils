@@ -1,0 +1,49 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   delink
+#
+# PURPOSE:
+#   Convert soft links into hard copies
+#
+# COMMENTS:
+#
+# INPUTS:
+#   file*   list of files
+#
+# OPTIONAL INPUTS:
+#
+# OUTPUTS:
+#   file*   now proper files, copied from link directory
+#
+# EXAMPLES:
+#   delink *.csh 
+# 
+# BUGS:
+#   - inevitable that some filenames cause problems, esp. with
+#     whitespace and special characters
+#
+# REVISION HISTORY:
+#   2002-??-??  started Marshall (MRAO)
+#-
+#=======================================================================
+
+foreach file1 ( $argv[*] )  
+  if ( -e $file1 ) then
+    set colourfile1=`ls -d $file1`
+  else
+    echo "  Delink: $file1 does not exist."  
+  endif
+  set file2=`/bin/ls -l $file1 | awk 'BEGIN {  FS=">" }  {print $2}'`
+  if ( $file2 == "" ) then 
+    echo "  Delink: $colourfile1 is not a soft link."  
+  else
+    set colourfile2=`ls -d $file2`
+    echo "  Delink: Replacing the soft link $colourfile1 with $colourfile2..."  
+    rm  $file1
+    cp -r $file2  $file1
+  endif
+end
+ 
+finish:

@@ -1,0 +1,229 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   bib2pdf
+#
+# PURPOSE:
+#   Read bibtex database, and download corresponding pdfs for all papers
+#
+# COMMENTS:
+#   See also bib2abs to download abstracts
+#
+# INPUTS:
+#   database.bib      bibtex database file, containing adsurl entries
+#
+# OPTIONAL INPUTS:
+#   -h --help
+#
+# OUTPUTS:
+#   database/*.pdf    papers in pdf format
+#
+# EXAMPLES:
+#
+# BUGS:
+#   - only uses last database on command line, does not loop over many
+#
+#
+# REVISION HISTORY:
+#   2006-10-20 started Marshall (UCSB)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set narg = $#argv
+set help = 0
+
+#Escaped default
+unset noclobber
+unalias rm
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case *:         #  databases
+      set database = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# Catch stupidities:
+
+if ( $narg == 0 ) then
+  echo "bib2pdf: no bibtex database supplied"
+  echo "         bib2abs database.bib "
+  goto FINISH
+endif
+
+echo "bib2pdf: downloading pdf for references in $database"
+
+# Get url list:
+
+set urls = `cat $database | \
+            grep adsurl | grep -v '% ' | \
+            cut -d'{' -f 2 | cut -d'}' -f 1`
+echo "bib2pdf: found $#urls papers to download"
+if ($#urls == 0) goto FINISH
+
+
+# Prepare directory:
+
+set outdir = $database:r
+mkdir -p $outdir
+set failures =  "$outdir/failures.txt"
+\rm -f $failures; touch $failures
+echo "bib2pdf: papers will be stored in directory $outdir"
+echo "bib2pdf: download failures will be logged in $failures"
+
+
+#-----------------------------------------------------------------------
+
+# Loop over urls, downloading abstracts:
+
+set new = 0
+set k = 0
+
+while ( $k < $#urls )
+
+  @ k ++
+
+  set bibcode = `echo "$urls[$k]" | cut -d'/' -f5`
+  echo "bib2pdf: querying bibcode $bibcode"
+
+# Download search results webpage:
+
+  links -source "$urls[$k]" >! htmlfile
+
+# First set output file name to something sensible-
+#   Marshall_bibcode.pdf
+#   Marshall+Treu_bibcode.pdf
+#   Marshall_etal_bibcode.pdf
+
+# get Authors' names:
+  set authors = ()
+  set j = 1
+  while ( $j < 100 )
+    @ j ++
+    set author = `grep "Authors:" htmlfile | \
+                    cut -d'?' -f $j | cut -d'=' -f2 | cut -d',' -f1`
+    if ($#author == 0) goto FILENAME               
+    set authors = ( $authors "${author}" )
+  end
+
+FILENAME:
+  if ($#authors == 1) then
+    set pdffile = "$outdir/${authors[1]}_${bibcode}.pdf"
+  else if ($#authors == 2) then
+    set pdffile = "$outdir/${authors[1]}+${authors[2]}_${bibcode}.pdf"
+  else
+    set pdffile = "$outdir/${authors[1]}_etal_${bibcode}.pdf"
+  endif
+
+  echo "bib2pdf: PDF file name: $pdffile"
+  
+# See if it already exists:
+
+  if ( -e "$pdffile" ) then
+    set gotit = `file "$pdffile" | grep PDF | wc -l`
+    if ($gotit) then
+      echo "bib2pdf: article has already been downloaded, skipping to next one"
+      goto NEXT
+    endif
+  endif    
+     
+# Now scan for pdf information: 
+
+  set pdfurl = `grep "Full Refereed Journal Article (PDF/Postscript)" htmlfile | \
+                cut -d'"' -f4` 
+  if ($#pdfurl == 0) then
+  # PDF does not exist - go get eprint instead
+    set arxiv = `grep "arXiv e-print<" htmlfile | head -1 | \
+                      cut -d':' -f3 | cut -d'/' -f1`
+    set index = `grep "arXiv e-print<" htmlfile | head -1 | \
+                      cut -d':' -f3 | cut -d'/' -f2 | cut -d')' -f1`
+    if ($#index > 0) then
+      set ejurl = ""
+      set pdfurl = "http://arxiv.org/pdf/${arxiv}/${index}"
+    else   
+    # eprint does not exist - just print electronic link instead:
+      set ejurl = `grep "Electronic Refereed Journal Article" htmlfile | head -1 | \
+                      cut -d'"' -f2`
+    endif 
+  else
+    set arxiv = 0   
+  endif
+# Correct special characters in PDFurl:  
+  set pdfurl = `echo "$pdfurl" | sed s/\\\&\\\#38\\\;/\\\&/g`
+  
+  echo "bib2pdf: PDF url: $pdfurl"
+
+# Catch errors:
+
+  if ($#pdfurl == 0) then
+    echo "bib2pdf: WARNING! PDF for this bibcode seems to be unavailable"
+    if ($#ejurl > 0) then
+      echo "bib2pdf: you might try the following link instead:"
+      echo "  $ejurl"
+      echo "$ejurl" >>! $failures
+    else 
+      echo "$urls[$k]" >>! $failures
+    endif  
+    echo "bib2pdf: skipping to next article..."
+    goto NEXT
+  endif
+
+  set logfile = "${outdir}/.${pdffile:t:r}.wget.log"
+
+# Download pdf:
+  echo "bib2pdf: downloading, log stored in $logfile"
+  
+  if ($arxiv == 0) then
+    wget -e robots=off --timestamping --continue "$pdfurl" -o $logfile -O "$pdffile"
+  else
+# 2007-05-21 (Monday) 19:29 PDT
+# wget does not work on arxiv! 
+    curl -o "$pdffile" "$pdfurl" >& $logfile
+  endif
+
+# Check that it worked:
+
+  set fail = `grep ERROR $logfile | head -1 | wc -l`
+  if ($fail == 0) then
+    set fail = `\ls "$pdffile" |& grep 'No such file or directory' | wc -l`
+  endif
+  if ($fail) then
+    echo "bib2pdf: WARNING! download failed, see logfile for details"
+    echo "$pdfurl" >>! $failures
+  else  
+    @ new ++
+  endif
+
+NEXT:
+
+end
+
+set nfailures = `cat $failures | wc -l`
+echo "bib2pdf: $new papers downloaded"
+echo "bib2pdf: $nfailures failures listed in $failures"
+
+\rm -f htmlfile
+
+FINISH:
+
+# =======================================================================

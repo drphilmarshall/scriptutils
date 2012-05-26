@@ -1,0 +1,406 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   airmass
+#
+# PURPOSE:
+#   Calculate airmass against time for given object on given date
+#
+# COMMENTS:
+#
+# USAGE:
+#       airmass    ra dec \
+#           [-d --date datestring]\
+#           [-o --output file]\
+#           [-s --site sitestring]
+#           [--hms]
+#           [-h --help]
+#
+# INPUTS:
+#   ra dec                 position of object in degrees
+#
+# OPTIONAL INPUTS:
+#   -d --date datestring   date of observation [today]
+#   -o --output file       output filename [J??????+??????_????-??-??_airmass.txt]
+#   --prefix  string       prefix for output filenames
+#   -s --site sitestring   observatory name []
+#   --hms                  coords supplied in hms dms not degrees
+#   --clean                clean up afterwards
+#   -h --help
+#
+# OUTPUTS:
+#   text file containing airmass information
+#
+# EXAMPLES:
+#
+#   SL2S lens:
+#
+#     airmass   32.1184002 -4.9475868
+#
+#     airmass  --hms  02:08:28.416 -04:56:51.31
+# 
+#
+# DEPENDENCIES:
+#   
+#   skycalc
+#
+# BUGS:
+#   - Plotting is crappy
+#  
+# REVISION HISTORY:
+#   2007-09-10  started Marshall (UCSB)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set narg = $#argv
+
+# Set defaults:
+
+unset ra0
+unset dec0
+set prefix = ''
+set site = 'm'
+set date = 0
+set minelevation = 20.0  # Keck limit!
+set maxelevation = 89.0  # Keck limit!
+
+set klobber = 0 
+
+set hms = 0
+set txtfile = 0
+set plotfile = 0
+set psfile = 0
+
+set help = 0
+set clean = 0
+
+#Escape shell defaults
+unset noclobber
+unalias rm
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case --{clean}:        
+      shift argv
+      set clean = 1
+      breaksw
+   case -s:   #  Site selection          
+      shift argv
+      set site = $argv[1]
+      shift argv
+      breaksw
+   case --{site}:        
+      shift argv
+      set site = $argv[1]
+      shift argv
+      breaksw
+   case --{hms}:   #  Coords input in hms dms?       
+      shift argv
+      set hms = 1
+      breaksw
+   case -d:   #  Date of observation     
+      shift argv
+      set date = $argv[1]
+      shift argv
+      breaksw
+   case --{date}:   
+      shift argv
+      set date = $argv[1]
+      shift argv
+      breaksw
+   case -x:        #  Clobber?
+      shift argv
+      set klobber = 1
+      breaksw
+   case --{clobber}:        
+      shift argv
+      set klobber = 1
+      breaksw
+   case --{prefix}:        
+      shift argv
+      set prefix = $argv[1]
+      shift argv
+      breaksw
+   case --{minimum-elevation}:        
+      shift argv
+      set minelevation = $argv[1]
+      shift argv
+      breaksw
+   case --{maximum-elevation}:        
+      shift argv
+      set maxelevation = $argv[1]
+      shift argv
+      breaksw
+   case *:         #  ra and dec!
+      set ra0 = $argv[1]
+      shift argv
+      set dec0 = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+SETUP:
+
+if ( $help || $narg < 2 ) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+echo "airmass: use skycalc to compute airmass vs. time for given object"
+
+# Check for software availabity:
+
+set noskycalc =  `which skycalc |& grep "not found" | wc -l` 
+if ($noskycalc) then
+  echo "${0:t:r}: ERROR: no skycalc program for computing airmass"
+  echo "${0:t:r}: You can download it from: \
+  http://zimmer.csufresno.edu/~fringwal/skycalc.c"
+  goto FINISH
+endif
+
+
+# Parse inputs:
+
+if ( ! $?ra0 ) then
+  echo "airmass: no RA specified"
+  goto FINISH
+endif
+if ( ! $?dec0 ) then
+  echo "airmass: no dec specified"
+  goto FINISH
+endif
+
+# Convert to degrees:
+unset rahms
+unset dechms
+if ($hms) then
+
+  set rahms =  `echo "$ra0" | sed s/:/\ /g`
+  set dechms = `echo "$dec0" | sed s/\:/\ /g`
+  set line = `skycoor -d $ra0 $dec0`
+  set ra0 = $line[1]
+  set dec0 = $line[2]
+
+endif 
+
+# Standardise date:
+
+if ($site == 'k') then
+   set sitestring = 'Kitt Peak (MDM Obs.)'
+else if ($site == 'a') then
+   set sitestring = 'Anglo-Australian Telelescope, Siding Spring'
+else if ($site == 'e') then
+   set sitestring = 'European Southern Obs, La Silla'
+else if ($site == 'h') then
+   set sitestring = 'Mt. Hopkins, AZ (MMT, FLWO)'
+else if ($site == 'l') then
+   set sitestring = 'Lick Observatory'
+else if ($site == 'm') then
+   set sitestring = 'Mauna Kea, Hawaii'
+else if ($site == 'p') then
+   set sitestring = 'Palomar Observatory'
+else if ($site == 'r') then
+   set sitestring = 'Roque de los Muchachos, La Palma, Canary Is.'
+else if ($site == 't') then
+   set sitestring = 'Cerro Tololo'
+else if ($site == 'T') then
+   set sitestring = 'McDonald Observatory, Mt. Locke, Texas'
+endif
+
+echo "airmass: observatory: $sitestring"
+echo "airmass: minimum elevation: $minelevation"
+echo "airmass: maximum elevation: $maxelevation"
+
+# Standardise date:
+if ($date == 0) set date = `date  +"%Y-%m-%d"`
+
+if ($OSTYPE == darwin) then
+  set year = `date -j -f "%Y-%m-%d"  "$date" +"%Y"`
+  set month = `date -j -f "%Y-%m-%d"  "$date" +"%m"`
+  set day = `date -j -f "%Y-%m-%d"  "$date" +"%d"`
+else  
+  set year = `date -d"$date" +"%Y"`
+  set month = `date -d"$date" +"%m"`
+  set day = `date -d"$date" +"%d"`
+endif  
+set date = "${year}-${month}-${day}"
+
+echo "airmass: observation date: $date"
+
+#-----------------------------------------------------------------------
+IAUNAME:
+
+if ( ! $?rahms ) then
+  set line = `skycoor $ra0 $dec0`
+  set rahms = `echo "$line[1]" | sed s/:/\ /g`
+endif 
+set rah = $rahms[1]
+set ram = $rahms[2] 
+set ras = `echo "$rahms[3]" | cut -c 1-2`
+
+if ( ! $?dechms ) then
+  set line = `skycoor $ra0 $dec0`
+  set dechms = `echo "$line[2]" | sed s/:/\ /g`
+endif
+set decd = $dechms[1]
+set decm = $dechms[2] 
+set decs = `echo "$dechms[3]" | cut -c 1-2`
+set decsign = ''
+ 
+echo "airmass: ra (deg): $ra0"
+echo "airmass: dec (deg): $dec0"
+
+echo "airmass: ra (J2000): $rah $ram $ras"
+echo "airmass: dec (J2000): $decsign$decd $decm $decs"
+
+set name = "${prefix}J${rah}${ram}${ras}${decsign}${decd}${decm}${decs}"
+
+echo "airmass: IAU name of search position: $name"
+
+set fileroot = ${name}_${date}_airmass
+
+set txtfile = ${fileroot}.txt
+set plotfile = ${fileroot}.plot.txt
+set psfile = ${fileroot}.ps
+
+if ($klobber) then
+  echo "airmass: clobbering existing files"
+  \rm -f $txtfile $plotfile
+else if ( -e $txtfile ) then
+  echo "airmass: $txtfile already exists, finishing"
+  goto FINISH
+endif  
+
+#-----------------------------------------------------------------------
+SKYCALC:
+
+set objrise = '*****'
+set objset = '*****'
+
+set ra = ( $rah $ram $ras )
+set dec = ( $decsign$decd $decm $decs )
+
+set minairmass = '100.0'
+set mintime = 'noon'
+
+echo "# time(local)   elevation/deg    airmass  notes" > $txtfile
+
+set count = 0
+# For Eddington expedition needed daytime obs!
+# foreach hour ( `seq 12 16` )
+foreach hour ( `seq 18 32` )
+  if ( $hour > 23 ) @ hour -= 24
+  foreach minute ( 00 15 30 45 )
+
+    @ count ++
+    set thisoneisok = 1
+
+    echo "$site\
+    e 2000\
+    y $year $month $day\
+    t $hour $minute 00\
+    r $ra\
+    d $dec\
+    =\
+    Q" | skycalc >& junk
+
+    set altitude = `cat junk | grep 'altitude' | cut -c 10-15`
+    set airmass = `cat junk | grep 'sec\.z' | cut -d'=' -f2`
+    if ($#airmass == 0) set airmass = `cat junk | grep 'airmass =' | cut -d'=' -f2`
+    
+    set flag = ''
+    set tiny = 0.0
+
+#     set settest = \
+#      `echo "0.5*(1.0 - $altitude/sqrt($altitude*$altitude))" | bc -l | cut -c1`
+    set settest = `echo "$altitude" | \
+                     awk '{if ($1 <= 0.0) print 1; else print 0}'`
+
+    if ( $settest == 1 ) then
+      set airmass = 'INF   -- Object is set!'
+      set tiny = 300000.0
+      set thisoneisok = 0
+    endif
+
+    set lowtest = `echo "2.0*$minelevation/($altitude+$minelevation) + $tiny" | bc -l | cut -c1`
+    if ( $lowtest == '1' ) then
+      set flag = '-- Elevation too low!'
+      set thisoneisok = 0
+    endif
+
+    set pupiltest = `echo "2.0*$altitude/($altitude+$maxelevation)" | bc -l | cut -c1`
+    if ( $pupiltest == '1' ) then
+      set flag = '-- Elevation too high!'
+    endif
+
+    echo "    ${hour}:${minute}           $altitude          $airmass $flag" >> $txtfile
+
+
+    if ( $count == 1 ) then
+      set thelastonewasok = $thisoneisok
+    endif
+
+    if ( ! $thelastonewasok && $thisoneisok ) then
+#         echo "# ***** ${name} rises at  ${hour}:${minute} *****"
+      set objrise = "${hour}:${minute}"
+    else if ( $thelastonewasok && ! $thisoneisok ) then
+#         echo "# ***** ${name} is set by ${hour}:${minute} *****"
+      set objset = "${hour}:${minute}"
+    endif  
+
+    set thelastonewasok = $thisoneisok
+    
+    if ( $thisoneisok ) then
+      set seconds = `echo "$hour*3600 + $minute*60" | bc`
+      if ($seconds > 43200) set seconds = `echo "$seconds - 86400" | bc`
+      set time = `echo "$seconds / 3600.0" | bc -l`
+      echo "$time $airmass" >> $plotfile
+      set test = `echo "2.0*$minairmass/($airmass+$minairmass)" | bc -l | cut -c1`
+      if ($test == 1) then 
+        set minairmass = $airmass
+        set mintime = "${hour}:${minute}"
+      endif  
+    endif
+    
+  end
+end
+echo "airmass: object rise/set time: ${objrise}/${objset}"
+echo "airmass: minimum airmass: ${minairmass} at ${mintime} local time"
+echo "airmass: all data written to $txtfile"
+
+#-----------------------------------------------------------------------
+POSTSCRIPT:
+
+echo "airmass: plotting postscript to $psfile"
+lineplot.pl -l $plotfile -o $psfile\
+  -ymin 2.0 -ymax 1.0 -ylabel 'airmass' \
+  -xmin -6 -xmax 8 -xlabel 'local time / hrs relative to midnight' \
+  -title "$name observability on $date "
+
+
+#-----------------------------------------------------------------------
+ENDGAME:
+
+echo "airmass: all done"
+
+FINISH:
+
+if ($clean) \rm -f $txtfile $plotfile $psfile
+\rm -f junk
+
+#=======================================================================

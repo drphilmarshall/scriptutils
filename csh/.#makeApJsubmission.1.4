@@ -1,0 +1,332 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   makeApJsubmission
+#
+# PURPOSE:
+#   Construct subdirectory with correctly formatted files ready for ApJ
+#   submission.
+#
+# COMMENTS:
+#
+# INPUTS:
+#   paper.tex       latex file, for paper to be submitted
+#
+# OPTIONAL INPUTS:
+#   output          name of output directory
+#
+# OUTPUTS:
+#   outdir          output directory, with tarball, ready to be sent 
+#                   to ApJ
+#
+# EXAMPLES:
+#  makeApJsubmission  --clobber --output submit  spi.tex
+#
+# BUGS:
+#  - output is highly verbose, no way to switch this off
+#  - figure copies are 1-1, 1-2 not 1a, 1b etc
+#  - no README file supplied
+#  - commands are not stored as documentation
+#  - only tested on well-formatted complete manuscript...
+#
+# REVISION HISTORY:
+#   2006-05-12  started Marshall (KIPAC)
+#-
+#=======================================================================
+
+# Escape defaults
+unset noclobber
+unalias rm
+
+# Options and arguments:
+
+set narg = $#argv
+
+set klobber = 0
+set outdir = 0
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case --{clobber}:  #  clobber output
+      shift argv
+      set klobber = 1
+      breaksw
+   case -o:           #  named output
+      shift argv
+      set outdir = $argv[1]
+      shift argv
+      breaksw
+   case --{output}:   #  named output
+      shift argv
+      set outdir = $argv[1]
+      shift argv
+      breaksw
+   case *:            #  latex file, only uses last one on command line
+      set texfile = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+# Catch stupidities:
+
+if ( $narg == 0 ) then
+  echo "makeApJsubmission: no latex file supplied"
+  echo "         makeApJsubmission paper.tex "
+  goto finish
+endif
+
+echo "makeApJsubmission: preparing submission package for $texfile"
+
+#-----------------------------------------------------------------------
+# Prepare directory:
+
+if ( $outdir == 0 ) set outdir = ${texfile:r}-ApJsubmit
+if ( -e $outdir ) then
+  echo "makeApJsubmission: directory $outdir already exists"
+  if ( $klobber ) then
+    \rm -rf $outdir
+    echo "makeApJsubmission: removed $outdir"
+  else  
+    goto finish
+  endif
+endif  
+mkdir -p $outdir
+echo "makeApJsubmission: made directory $outdir"
+
+#-----------------------------------------------------------------------
+# Main latex file:
+
+set newtexfile = $outdir/ms.tex
+cp $texfile $newtexfile 
+echo "makeApJsubmission: made copy of latex file $newtexfile"
+ 
+# Set document class correctly:
+
+set line = `grep -n documentclass $newtexfile | grep -v '%\\' | cut -d':' -f1`
+grep -n documentclass $newtexfile | grep -v '%\\' | cut -d':' -f2 > junk
+echo "makeApJsubmission: detected "`cat junk`
+rm junk
+
+set newcomm = '\documentclass[12pt,preprint]{aastex}'
+
+@ line --
+head -$line $newtexfile > ttttemp1.tex
+echo "$newcomm" >> ttttemp1.tex
+@ line ++
+@ line ++
+tail +$line $newtexfile >> ttttemp1.tex
+mv ttttemp1.tex $newtexfile 
+
+echo "makeApJsubmission: reset to $newcomm"
+
+# Replace \submitted line:
+
+set line = `grep -n '\submitted' $newtexfile | grep -v '%\\' | cut -d':' -f1`
+grep -n '\submitted' $newtexfile | grep -v '%\\' | cut -d':' -f2 > junk
+set test = `cat junk | wc -l`
+
+if ($test > 0) then
+  echo "makeApJsubmission: detected \submitted line"
+  set text = `cat junk | cut -d'{' -f2 | cut -d'}' -f1`
+  @ line --
+  head -$line $newtexfile > ttttemp1.tex
+  echo '\begin{center}\itshape{'"$text"'}\end{center}' >> ttttemp1.tex
+  @ line ++
+  @ line ++
+  tail +$line $newtexfile >> ttttemp1.tex
+  mv ttttemp1.tex $newtexfile 
+  echo "makeApJsubmission: reset to standard centered italicised text"
+endif
+rm junk
+
+# Replace bibtex call with internalised bibliography:
+
+set line = `grep -n '\\bibliography{' $newtexfile | cut -d':' -f1`
+set test = $#line
+
+if ($test > 0) then
+  echo "makeApJsubmission: detected \\bibliography line"
+  grep -n '\\bibliography{' $newtexfile | cut -d':' -f2 > junk
+  set root = `cat junk | cut -d'{' -f2 | cut -d'}' -f1`
+  rm junk
+  
+  set bblfile = $root.bbl
+  if ( ! -e $bblfile ) then
+    set bibfile = $root.bib
+    if ( ! -e $bibfile ) then
+      echo "makeApJsubmission: bibtex database $bibfile not found"
+    else
+      bubble -f $texfile $bibfile
+    endif
+  endif  
+
+  @ line --
+  head -$line $newtexfile > ttttemp1.tex
+  
+  cat $bblfile >> ttttemp1.tex
+  @ line ++
+  @ line ++
+  tail +$line $newtexfile >> ttttemp1.tex
+  mv ttttemp1.tex $newtexfile 
+
+  echo "makeApJsubmission: bibliography internalised to latex file"
+endif
+
+#-----------------------------------------------------------------------
+# Figures:
+
+set correspondence = $outdir.figures.txt
+touch $correspondence ; rm $correspondence
+
+# Get line numbers of figures, and make tempoarary files:
+
+set firstlines = `grep -n "begin{figure" $newtexfile | grep -v '%' | cut -d':' -f1`
+set lastlines  = `grep -n "end{figure"   $newtexfile | grep -v '%' | cut -d':' -f1`
+
+set nfigures = $#firstlines
+echo "makeApJsubmission: detected $nfigures figures"
+
+set i=0
+while ( $i < $nfigures )
+  @ i ++
+
+# Get figure latex:
+
+  @ nlines = $lastlines[$i] - $firstlines[$i] - 1 
+  set figfile = $outdir/f${i}.tex
+  tail +${firstlines[$i]} $newtexfile | head -${nlines} > $figfile
+  echo "makeApJsubmission: scraped $nlines lines into $figfile"
+
+# Search for all postscript files used:
+
+  set psfiles = ( `grep -e plotone -e plottwo $figfile | grep -v '%' | cut -d'{' -f2- | sed s/\{/\ /g | sed s/\}/\ /g` )
+  set npanels = $#psfiles
+  echo "makeApJsubmission: detected $npanels \plotone or \plottwo panels in figure $i"
+  if ($npanels == 0) then
+    set psfiles = `grep includegraphics $figfile | grep -v '%' | sed s/includegraphics/_/g | cut -d'_' -f2 | cut -d'{' -f2 | cut -d'}' -f1`
+    set npanels = $#psfiles
+    echo "makeApJsubmission: detected $npanels \includegraphics panels in figure $i"
+  endif
+  if ($npanels == 0) then
+    echo "makeApJsubmission: could not read graphics typesetting"
+    goto finish
+  endif
+  
+# Copy all postscript files, and change latex:
+
+# First replace forward slashes with something else...
+  sed s/\\//XSLASHX/g $newtexfile > ttttemp1.tex 
+   
+  set char = ( a b c d e f g h i j k l m n o p q r s t u v w x y z ) 
+# Now loop over panels
+  if ( $npanels == 1 ) then
+    set epsfile = $outdir/f$i.eps
+    cp -v $psfiles[1] $epsfile >>& $correspondence
+    echo "makeApJsubmission: made copy of $psfiles[1]"
+    set pattern1 = `echo $psfiles[1] | sed s/\\//XSLASHX/g`
+    set pattern2 = `echo $epsfile:t  | sed s/\\//XSLASHX/g`
+    cat ttttemp1.tex | sed s/$pattern1/$pattern2/g > ttttemp2.tex 
+    mv ttttemp2.tex ttttemp1.tex
+    echo "makeApJsubmission: updated $newtexfile to use $epsfile"
+  else
+    set j=0
+    while ( $j < $npanels )
+      @ j ++
+      set epsfile = $outdir/f${i}${char[$j]}.eps
+      cp -v $psfiles[$j] $epsfile >>& $correspondence
+      echo "makeApJsubmission: made copy of $psfiles[$j]"
+      set pattern1 = `echo $psfiles[$j] | sed s/\\//XSLASHX/g`
+      set pattern2 = `echo $epsfile:t   | sed s/\\//XSLASHX/g`
+      cat ttttemp1.tex | sed s/$pattern1/$pattern2/g > ttttemp2.tex 
+      mv ttttemp2.tex ttttemp1.tex
+      echo "makeApJsubmission: updated $newtexfile to use $epsfile"
+    end
+  endif  
+
+# Finally put the slashes back!
+  sed s/XSLASHX/\\//g ttttemp1.tex > $newtexfile 
+  rm ttttemp1.tex
+
+# Clean up:
+
+  rm $figfile
+  echo "makeApJsubmission: removed $figfile"
+     
+end
+
+#-----------------------------------------------------------------------
+# Run latex to test for reference errors:
+
+echo "makeApJsubmission: running latex in directory $outdir"
+chdir $outdir
+set thistexfile = $newtexfile:t
+set logfile = $thistexfile:r.latexoutput
+
+echo "x" | latex $thistexfile >& $logfile
+echo "makeApJsubmission: and again"
+echo "x" | latex $thistexfile >>& $logfile
+echo "makeApJsubmission: and again"
+echo "x" | latex $thistexfile >>& $logfile
+
+# Now search for errors:
+
+grep -e 'Warning:' -e 'Error:' -e '!'  ms.log  > $logfile
+
+set fail = 0
+set nwarnings = `grep -e 'Warning:' $logfile | wc -l`
+if ( $nwarnings > 0 ) set fail = 1
+set nerrors =   `grep  -e 'Error:' -e '!' $logfile | wc -l`
+if ( $nerrors > 0 ) set fail = 2
+
+if ( $fail > 0 ) then
+  echo "makeApJsubmission: received following messages from LaTeX:"
+  cat $logfile
+  echo "makeApJsubmission: check $outdir/$thistexfile:r.log for details"
+else
+  echo "makeApJsubmission: LaTeX compiled paper with no problems"
+endif
+
+if ( -e $thistexfile:r.dvi ) then
+  echo "makeApJsubmission: making postscript for checking"
+  \dvips -f -Pcmz $thistexfile:r.dvi -o $thistexfile:r.ps >& junk
+  rm junk
+  mv $thistexfile:r.ps ../$texfile:r.submitted.ps
+  echo "makeApJsubmission: be sure to gv $texfile:r.submitted.ps"
+endif
+
+if ( $fail == 2 ) then
+  goto finish
+else  
+  rm $logfile *.log *.dvi *.aux 
+endif
+
+# ----------------------------------------------------------------------
+# Write README file:
+# 
+# File containing information pertinent to the efficient processing of
+# your manuscript: the type of submission (new, revised, or final); the
+# name of the corresponding author along with a street address (no PO box
+# number), phone number, FAX number, and e-mail address; a list of the
+# names of the files being submitted; and any other information that may
+# be helpful to the editorial or production offices
+
+#-----------------------------------------------------------------------
+# Make a tarball for submission:
+
+set tarball = $outdir.tar.gz
+tar cvzf $tarball * >& /dev/null
+
+echo "makeApJsubmission: made tarball $tarball with contents:"
+tar tvzf $tarball
+
+#-----------------------------------------------------------------------
+
+echo "makeApJsubmission: all done - figure details in $correspondence"
+
+finish:
+
+#=======================================================================

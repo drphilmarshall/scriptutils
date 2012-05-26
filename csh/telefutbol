@@ -1,0 +1,175 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   telefutbol
+#
+# PURPOSE:
+#   Scrape soccertv for all matches being shown on US TV featuring the
+#   named club.
+#
+# COMMENTS:
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#  --club  name       List matches featuring [Arsenal]
+#  --timezone  zone   Show kickoff times for this zone [Pacific]
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#
+# BUGS:
+#  - club name must be a single word (only first word is read)
+#  - ordering is not quite chronological as 12 hour clock is used
+#
+# REVISION HISTORY:
+#   2007-02-19  started Marshall (UCSB)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set club = Arsenal
+set timezone = Pacific
+set help = 0
+
+#Escaped default
+unset noclobber
+unalias rm
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:
+      set help = 1
+      shift argv
+      breaksw
+   case --help:
+      set help = 1
+      shift argv
+      breaksw
+   case --{club}:
+      shift argv
+      set club = $argv[1]
+      shift argv
+      breaksw
+   case --{timezone}:
+      shift argv
+      set timezone = $argv[1]
+      shift argv
+      breaksw
+   case *:
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+# Catch stupidities, set up variables:
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+set fail = `which lynx | & grep "Command not found" | wc -l`
+if ($fail) then
+  echo "telefutbol: lynx not found"
+  goto FINISH
+endif
+
+set chnames = ( 'FoxSC' 'ESPN' 'Setanta' 'Telemundo' )
+set chcodes = ( 'foxsoc' 'espn' 'set' 'tmundo' )
+
+if ( ${timezone} != 'Pacific' && ${timezone} != 'Mountain' && \
+     ${timezone} != 'Central' && ${timezone} != 'Eastern' ) then
+  echo "telefutbol: unrecognised time zone ${timezone}"
+  goto FINISH
+else if ( ${timezone} == 'Pacific' ) then
+  set dt = 7
+else if ( ${timezone} == 'Mountain' ) then
+  set dt = 6
+else if ( ${timezone} == 'Central' ) then
+  set dt = 5
+else if ( ${timezone} == 'Eastern' ) then
+  set dt = 4
+endif
+
+echo "telefutbol: listing televised matches featuring ${club}"
+
+#-----------------------------------------------------------------------
+
+# Loop over channels, scraping out text relating to $club:
+
+set webpage = /tmp/webpage.txt ; \rm -f $webpage
+set tmp = /tmp/data.txt ; \rm -f $tmp
+
+set nshows = 0
+
+set k = 0
+while ( $k < $#chnames )
+  @ k ++
+
+# Download web page as plain text:
+  set url = "http://www.soccertv.com/${chcodes[$k]}.cfm"
+  lynx --dump --nolist "$url" >! $webpage
+  set fail = `grep 'Sorry, the page you requested cannot be found' $webpage| \
+              tail -n 1 | wc -l`
+  if ($fail) then
+    echo "ERROR: webpage $url not found!"          
+    goto FINISH
+  endif
+  
+# Find starting point:
+  set startline = `cat $webpage | \
+                   grep -n "Selected telecasts for the next 8 days" | \
+                   cut -d':' -f1`
+  set clublines = `tail -n +$startline $webpage | \
+                   grep -n ${club} | cut -d':' -f1`
+
+  if ( $#clublines == 0 ) goto NEXTCHANNEL
+
+  foreach i ( $clublines )
+    @ nshows ++
+    @ clubline = $i + $startline - 1
+    set line = ( `seq 5` )
+#   Date:
+    @ line[1] = $clubline - $dt
+#   Length:
+    @ line[2] = $clubline - 3
+#   Channel:
+    @ line[3] = $clubline - 2
+#   Competition:
+    @ line[4] = $clubline - 1
+#   Fixture:
+    @ line[5] = $clubline
+    set string = ""
+    foreach j ( `seq 5` )
+      set string = "$string  "`head -$line[$j] $webpage | tail -1 | sed s/'Length: '//g`
+    end
+    echo $string >> $tmp
+  end
+
+NEXTCHANNEL:
+end
+
+echo "telefutbol: found $nshows programmes"
+
+# Sort by date and time:
+
+if ($nshows > 0) then
+  echo " " 
+  cat $tmp | sort -k 3
+  echo " " 
+endif
+
+# Clean up:
+
+\rm -f $webpage $tmp
+
+FINISH:
+
+#=======================================================================

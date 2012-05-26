@@ -1,0 +1,166 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   wgetdir
+#
+# PURPOSE:
+#   Download a directory, and all its contents, in an intutive way.
+#
+# COMMENTS:
+#   Make a new directory, and fill it appropriately.
+#
+# USAGE:
+#       wgetdir  url
+#
+# INPUTS:
+#   url                    URL of web directory
+#
+# OPTIONAL INPUTS:
+#   -h --help
+#   -v --verbose
+#   -x --clobber           Overwrite directories and ALL OF THEIR CONTENTS
+#
+# OUTPUTS:
+#
+# EXAMPLES:
+#
+#   wgetdir  http://tartufo.physics.ucsb.edu/~gilles/fits2rgb/
+# 
+#
+# DEPENDENCIES:
+#
+#   wget
+#
+# BUGS:
+#   - seems to download dir/*, but also dir/../*/*
+#  
+# REVISION HISTORY:
+#   2008-06-02  started Marshall (UCSB)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set vb = 0
+set klobber = 0
+set urls = ()
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -v:           #  verbose operation
+      set vb = 1
+      shift argv
+      breaksw
+   case --{verbose}:  
+      set vb = 1
+      shift argv
+      breaksw
+   case -x:           #  clobber directories!
+      set klobber = 1
+      shift argv
+      breaksw
+   case --{clobber}:  
+      set klobber = 1
+      shift argv
+      breaksw
+   case *:            #  list of web directory urls to be downloaded
+      set urls = ( $urls $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help || $#urls == 0) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+set TOP_DIR = `echo $cwd`
+
+foreach url ( $urls )
+
+# Make sure url ends in a trailing slash!
+  set len = `echo "$url" | wc -c`
+  @ len --
+  set char = `echo "$url" | cut -c$len`
+  if ($char != '/') set url = "$url/"
+
+# Now split into pieces:
+  set pieces = `echo "$url" | sed s/'~'/twiddles/g | sed s/'\/'/' '/g`
+  set dir = $pieces[$#pieces]
+  set website = `echo $url | sed s/"$dir\/"//g`
+    
+  if ($vb) then
+    echo "${0:t}: Downloading directory $dir from website"
+    echo "${0:t}:   $website"
+    echo "${0:t}: into current working directory"
+    echo "${0:t}:   $TOP_DIR"
+    if ($klobber) echo "${0:t}: Clobbering directory and all of its contents!"
+  endif  
+
+  if ($klobber) \rm -rf $dir
+
+  mkdir -p $dir
+  chdir $dir
+  
+  @ ndirs = $#pieces - 2
+#   if ($vb) echo "${0:t}: Split url into $#pieces pieces: --cut-dirs=$ndirs"
+
+  set now = `date '+%Y%m%d-%H%M%S'`
+  set logfile = .wget.$now.log
+  
+  wget "$url" \
+    -e robots=off \
+    --timestamping \
+    --continue \
+    --recursive \
+    --no-parent \
+    --no-host-directories \
+    --cut-dirs=$ndirs \
+    --output-file $logfile \
+    --accept "*"
+  
+  chdir $TOP_DIR
+  if ($vb) echo "${0:t}: log stored in $dir/$logfile"
+    
+  if ($vb) echo "${0:t}: removing irrelevant directory indexes"
+  set stupidindexes = `find $dir | grep 'index.html?'`
+  \rm -f $stupidindexes  
+
+  if ($vb) echo "${0:t}: renaming useful directory indexes"
+  set usefulindexes = `find $dir | grep 'index.html' | grep -v '\.index.html'`
+  foreach index ( $usefulindexes )
+    set hide = `grep '<title>Index of' $index | tail -1 | wc -l`
+    if ($hide) then
+      if ($vb) then 
+        mv -v $index $index:h/.$index:t 
+      else       
+        mv    $index $index:h/.$index:t      
+      endif
+    endif
+  end
+      
+  if ($vb) echo "${0:t}: finished:"
+  du -sh $dir
+   
+end
+
+FINISH:
+
+#=======================================================================

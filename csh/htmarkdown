@@ -1,0 +1,155 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   htmarkdown
+#
+# PURPOSE:
+#   Remove all html tags to leave plain text.
+#
+# COMMENTS:
+#
+# USAGE:
+#       htmarkdown file [-o outfile] [--ignore-comments]
+#
+# INPUTS:
+#   file.html              Input file(s)
+#
+# OPTIONAL INPUTS:
+#   -o --output            Write output a named new file (def is html -> txt)
+#   -h --help
+#
+# OUTPUTS:
+#   file.txt (or outfile with -o)
+#
+# EXAMPLES:
+#
+#   htmarkdown  index.html
+# 
+#
+# DEPENDENCIES:
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2008-02-21  started Marshall (UCSB)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set output = 0
+set files = ()
+set ignorecomments = 0
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -o:           #  output to new file
+      shift argv
+      set output = $argv[1]
+      shift argv
+      breaksw
+   case --{output}:        
+      shift argv
+      set output = $argv[1]
+      shift argv
+      breaksw
+   case --{flush}:        
+      shift argv
+      set output = stdout
+      breaksw
+   case --{ignore-comments}:        
+      shift argv
+      set ignorecomments = 1
+      breaksw
+   case *:            #  list of files to be htmarkdowned
+      set files = ( $files $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help || $#files == 0) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+if ($output != 0) then
+  set files = $files[1]
+endif  
+
+foreach file ( $files )
+
+  set now = `date '+%Y%m%d-%H%M%S.%N'`
+  if ($output == 0) then
+    set tmpfile = /tmp/htmarkdown.$now.tmp
+    set outfile = $file:r.txt
+  else if ($output == 'stdout') then
+    set tmpfile = /tmp/htmarkdown.$now.tmp
+  else 
+    set tmpfile = $output
+    set outfile = $tmpfile
+  endif
+  set now = `date '+%Y%m%d-%H%M%S.%N'`
+  set tmpfile1 = /tmp/htmarkdown.$now.tmp
+  \rm -f $tmpfile $tmpfile1
+  cp $file $tmpfile1
+
+# Attempt to ignore commented lines:
+  if ($ignorecomments) then 
+    sleep 1
+    set now = `date '+%Y%m%d-%H%M%S.%N'`
+    set tmpfile2 = /tmp/htmarkdown.$now.tmp
+    \rm -f $tmpfile2
+    set n1 = `cat $tmpfile1 | grep -n '<!--' | cut -d':' -f1`
+    set n2 = `cat $tmpfile1 | grep -n '\-\->' | cut -d':' -f1`
+    if ($#n1 != $#n2) then
+      echo "ERROR: unable to interpret commenting [$#n1,$#n2] in $file, skipping"
+      goto NEXT
+    endif 
+    foreach i ( `seq $#n1` )
+      cat $tmpfile1 | sed -n "${n1[$i]},${n2[$i]}p" >> $tmpfile2
+    end
+    sdiff -l -w 400 -s $tmpfile1 $tmpfile2 | sed s/'    <'//g > $tmpfile
+    mv $tmpfile $tmpfile1       
+  endif
+
+# The money line:
+  cat $tmpfile1 | \
+  sed -e :a -e 's/<[^>]*>//g;/</N;//ba' |\
+  sed s/'&nbsp;'/' '/g |\
+  sed s/'&times;'/'x'/g |\
+  sed s/'&#177;'/'+\/-'/g |\
+  sed s/'-->'//g |\
+  sed 's/^[ \t]*//' | sed 's/[ \t]*$//' | grep . >! $tmpfile
+  
+  if ($output == 0) then
+    mv -f $tmpfile $outfile
+    ls -l $outfile
+  else if ($output == 'stdout') then
+    cat $tmpfile
+#   else
+#     ls -l $outfile
+  endif
+  
+NEXT:    
+end
+
+FINISH:
+
+#=======================================================================

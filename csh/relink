@@ -1,0 +1,84 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   relink
+#
+# PURPOSE:
+#   Fix broken links by supplying correct target directory
+#
+# COMMENTS:
+#
+# INPUTS:
+#   dir     new target directory
+#   file*   list of files
+#
+# OPTIONAL INPUTS:
+#
+# OUTPUTS:
+#   file*   now fixed links
+#
+# EXAMPLES:
+#   relink ~/csh *.csh 
+# 
+# BUGS:
+#   - inevitable that some filenames cause problems, esp. with
+#     whitespace and special characters
+#
+# REVISION HISTORY:
+#   2002-??-??  started Marshall (MRAO)
+#-
+#=======================================================================
+#!/bin/tcsh
+
+set num=${#argv}
+
+if ($num == 0) then
+  echo 'Usage: relink directory brokenlink1 brokenlink2 ... '
+  goto finish
+else if ($num == 1) then
+  echo 'Usage: relink directory brokenlink1 brokenlink2 ... '
+  goto finish
+endif  
+
+set i=0
+foreach file ( $argv[*] )
+
+  @ i++
+  
+  if ( $i == 1) then
+  
+    set dir=$file:h
+    if ( ! -e $dir ) then 
+      echo "  Relink: target directory "$dir" does not exist."
+	goto finish  
+    endif
+  
+  else
+
+    set link1=`/bin/ls -l $file | awk 'BEGIN {  FS=">" }  {print $2}'`
+    
+    if ( $link1 == "" ) then 
+      echo "  Relink: No need to relink "$file  
+    else
+      set file1=$link1:t
+      set link2=$dir/$file1
+      if ( ! -e $link2 ) then 
+        echo "  Relink: target file $link2 does not exist."  
+      else if ( $link1 == $link2 ) then 
+        echo "  Relink: No need to relink $file" 
+      else
+        echo "  Relink: Replacing the soft link "
+	  echo "             "$file" -> "$link1
+	  echo "          with "
+	  echo "             "$file" -> "$link2  
+        rm $file
+        ln -s $link2 $file
+      endif
+    endif 
+  
+  endif
+
+end
+ 
+finish:

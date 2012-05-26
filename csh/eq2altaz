@@ -1,0 +1,279 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   eq2altaz
+#
+# PURPOSE:
+#   Calculate altitude and azimuth for a given object (ra,dec)
+#   from a given observatory on given date and time [def=now]
+#
+# COMMENTS:
+#
+# USAGE:
+#       eq2altaz    ra dec \
+#           [-d --date datestring]\
+#           [-s --site sitestring]
+#           [--hms]
+#           [-h --help]
+#
+# INPUTS:
+#   ra dec                 position of object in degrees
+#
+# OPTIONAL INPUTS:
+#   -d --date datestring   date of observation [today, right now]
+#   -s --site sitestring   observatory name []
+#   --hms                  coords supplied in hms dms not degrees
+#   -h --help
+#
+# OUTPUTS:
+#   azimuth (deg)
+#   altitude (deg)
+#
+# EXAMPLES:
+#
+#   eq2altaz --hms 10:48:24 +37:34:13 --time 1938
+#     eq2altaz: use skycalc to compute eq2altaz for a given object
+#     eq2altaz: observatory: Mauna Kea, Hawaii
+#     eq2altaz: observation date and time: 2009-04-02_1938
+#     eq2altaz: ra (deg): 162.10000
+#     eq2altaz: dec (deg): 37.57028
+#     eq2altaz: ra (J2000): 10 48 24
+#     eq2altaz: dec (J2000): +37 34 13
+#     eq2altaz: altitude (deg): 49.93
+#     eq2altaz: azimuth (deg): 54.75
+#
+# DEPENDENCIES:
+#   
+#   skycalc
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2009-04-03  started Marshall (UCSB)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set narg = $#argv
+
+# Set defaults:
+
+unset ra0
+unset dec0
+set site = 'm'
+set date = 0
+set time = 0
+set hms = 0
+set help = 0
+
+# Escape shell defaults
+unset noclobber
+unalias rm
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -s:   #  Site selection          
+      shift argv
+      set site = $argv[1]
+      shift argv
+      breaksw
+   case --{site}:        
+      shift argv
+      set site = $argv[1]
+      shift argv
+      breaksw
+   case --{hms}:   #  Coords input in hms dms?       
+      shift argv
+      set hms = 1
+      breaksw
+   case -d:   #  Date of observation     
+      shift argv
+      set date = $argv[1]
+      shift argv
+      breaksw
+   case --{date}:   
+      shift argv
+      set date = $argv[1]
+      shift argv
+      breaksw
+   case -t:   #  Time of observation     
+      shift argv
+      set time = $argv[1]
+      shift argv
+      breaksw
+   case --{time}:   
+      shift argv
+      set time = $argv[1]
+      shift argv
+      breaksw
+   case *:         #  ra and dec!
+      set ra0 = $argv[1]
+      shift argv
+      set dec0 = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+SETUP:
+
+if ( $help || $narg < 2 ) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+echo "eq2altaz: use skycalc to compute altitude and azimuth for a given object"
+
+# Check for software availabity:
+
+set noskycalc =  `which skycalc |& grep "not found" | wc -l` 
+if ($noskycalc) then
+  echo "${0:t:r}: ERROR: no skycalc program for computing eq2altaz"
+  echo "${0:t:r}: You can download it from: \
+  http://zimmer.csufresno.edu/~fringwal/skycalc.c"
+  goto FINISH
+endif
+
+
+# Parse inputs:
+
+if ( ! $?ra0 ) then
+  echo "eq2altaz: no RA specified"
+  goto FINISH
+endif
+if ( ! $?dec0 ) then
+  echo "eq2altaz: no dec specified"
+  goto FINISH
+endif
+
+# Convert to degrees:
+unset rahms
+unset dechms
+if ($hms) then
+
+  set rahms =  `echo "$ra0" | sed s/:/\ /g`
+  set dechms = `echo "$dec0" | sed s/\:/\ /g`
+  set line = `skycoor -d $ra0 $dec0`
+  set ra0 = $line[1]
+  set dec0 = $line[2]
+
+endif 
+
+# Standardise date:
+
+if ($site == 'k') then
+   set sitestring = 'Kitt Peak (MDM Obs.)'
+else if ($site == 'a') then
+   set sitestring = 'Anglo-Australian Telelescope, Siding Spring'
+else if ($site == 'e') then
+   set sitestring = 'European Southern Obs, La Silla'
+else if ($site == 'h') then
+   set sitestring = 'Mt. Hopkins, AZ (MMT, FLWO)'
+else if ($site == 'l') then
+   set sitestring = 'Lick Observatory'
+else if ($site == 'm') then
+   set sitestring = 'Mauna Kea, Hawaii'
+else if ($site == 'p') then
+   set sitestring = 'Palomar Observatory'
+else if ($site == 'r') then
+   set sitestring = 'Roque de los Muchachos, La Palma, Canary Is.'
+else if ($site == 't') then
+   set sitestring = 'Cerro Tololo'
+else if ($site == 'T') then
+   set sitestring = 'McDonald Observatory, Mt. Locke, Texas'
+endif
+
+echo "eq2altaz: observatory: $sitestring"
+
+# Standardise date:
+if ($date == 0) set date = `date  +"%Y-%m-%d"`
+if ($time == 0) set time = `date  +"%H%M"`
+
+if ($OSTYPE == darwin) then
+  set year = `date -j -f "%Y-%m-%d %H%M"  "$date $time" +"%Y"`
+  set month = `date -j -f "%Y-%m-%d %H%M"  "$date $time" +"%m"`
+  set day = `date -j -f "%Y-%m-%d %H%M"  "$date $time" +"%d"`
+  set hour = `date -j -f "%Y-%m-%d %H%M"  "$date $time" +"%d"`
+  set minute = `date -j -f "%Y-%m-%d %H%M"  "$date $time" +"%M"`
+else  
+  set year = `date -d"$date" +"%Y"`
+  set month = `date -d"$date" +"%m"`
+  set day = `date -d"$date" +"%d"`
+  set hour = `date -d"$date $time" +"%H"`
+  set minute = `date -d"$date $time" +"%M"`
+endif  
+
+set date = "${year}-${month}-${day}_${hour}${minute}"
+
+echo "eq2altaz: observation date and time: $date"
+
+#-----------------------------------------------------------------------
+IAUNAME:
+
+if ( ! $?rahms ) then
+  set line = `skycoor $ra0 $dec0`
+  set rahms = `echo "$line[1]" | sed s/:/\ /g`
+endif 
+set rah = $rahms[1]
+set ram = $rahms[2] 
+set ras = `echo "$rahms[3]" | cut -c 1-2`
+
+if ( ! $?dechms ) then
+  set line = `skycoor $ra0 $dec0`
+  set dechms = `echo "$line[2]" | sed s/:/\ /g`
+endif
+set decd = $dechms[1]
+set decm = $dechms[2] 
+set decs = `echo "$dechms[3]" | cut -c 1-2`
+set decsign = ''
+ 
+echo "eq2altaz: ra (deg): $ra0"
+echo "eq2altaz: dec (deg): $dec0"
+
+echo "eq2altaz: ra (J2000): $rah $ram $ras"
+echo "eq2altaz: dec (J2000): $decsign$decd $decm $decs"
+
+# set name = "${prefix}J${rah}${ram}${ras}${decsign}${decd}${decm}${decs}"
+# 
+# echo "eq2altaz: IAU name of search position: $name"
+# 
+#-----------------------------------------------------------------------
+SKYCALC:
+
+set ra = ( $rah $ram $ras )
+set dec = ( $decsign$decd $decm $decs )
+
+echo "$site\
+    e 2000\
+    y $year $month $day\
+    t $hour $minute 00\
+    r $ra\
+    d $dec\
+    =\
+    Q" | skycalc >& junk
+
+set altitude = `cat junk | grep 'altitude' | sed s/','/' '/g | awk '{print $2}'`
+set azimuth  = `cat junk | grep 'altitude' | sed s/','/' '/g | awk '{print $4}'`
+
+echo "eq2altaz: altitude (deg): ${altitude}"
+echo "eq2altaz: azimuth (deg): ${azimuth}"
+
+#-----------------------------------------------------------------------
+
+FINISH:
+# \rm -f junk
+
+#=======================================================================

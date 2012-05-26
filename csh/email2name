@@ -1,0 +1,187 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   email2name
+#
+# PURPOSE:
+#   Search the web for names associated with the given email address
+#
+# COMMENTS:
+#
+# USAGE:
+#
+#   email2name string@domain.name
+#
+# INPUTS:
+#   email address
+#
+# OPTIONAL INPUTS:
+#   -g --guess  name
+#   -h --help
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#   email2name pjm@physics.ucsb.edu
+#
+# BUGS:
+#
+# REVISION HISTORY:
+#   2007-03-02  started Marshall (UCSB)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set addresses = ( )
+set help = 0
+set guessedname = 0
+set vb = 0
+
+unset noclobber
+unalias rm
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:        #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -v:        #  be verbose
+      set vb = 1
+      shift argv
+      breaksw
+   case --{verbose}:  
+      set vb = 1
+      shift argv
+      breaksw
+   case -g:  #  guess name
+      shift argv
+      set guessedname = $argv[1]
+      shift argv
+      breaksw
+   case --{guess}: 
+      shift argv
+      set guessedname = $argv[1]
+      shift argv
+      breaksw
+   case *:         #  email addresses
+      set addresses = ( $addresses $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+# Catch stupidities:
+
+if ( $help == 1 || $#addresses == 0 ) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+if ($vb) echo "email2name: searching for names associated with $#addresses email addresses" 
+
+if ($guessedname == 0) then
+  set guessedname = ""
+  set guessedname2 = ""
+else
+  set initial = `echo $guessedname | cut -c1 | tr '[:lower:]' '[:upper:]'`
+  set guessedname2 = ${initial}`echo $guessedname | cut -c2-`
+  if ($vb) echo "email2name: using the guessed name $guessedname to help" 
+endif  
+
+#-----------------------------------------------------------------------
+
+# Construct google url, and make output filename as well:
+
+# Example URLs:
+
+# Search for "pjm@physics.ucsb.edu"
+# http://www.google.com/search?hl=en&client=firefox-a&rls=org.mozilla%3Aen-US%3Aofficial&q=pjm%40physics.ucsb.edu&btnG=Search
+
+# Search for "pjm physics.ucsb.edu"
+# http://www.google.com/search?hl=en&client=firefox-a&rls=org.mozilla%3Aen-US%3Aofficial&q=pjm+physics.ucsb.edu&btnG=Search
+
+set string1 = "http://www.google.com/search?hl=en&q="
+set string2 = "&btnG=Search"
+
+# Loop over addresses:
+
+set tmpfile = .email2name.tmp
+set namefile = .email2name.names
+foreach address ( $addresses )
+
+  if ($vb) echo "email2name: google results containing ${address}:" 
+
+  set userid = `echo $address | cut -d'@' -f1`
+  set domain = `echo $address | cut -d'@' -f2`
+  set url1 = "${string1}${userid}%40${domain}${string2}"
+  set url2 = "${string1}${userid}+${domain}${string2}"
+  set initial = `echo $userid | cut -c1 | tr '[:lower:]' '[:upper:]'`
+  set userid2 = ${initial}`echo $userid | cut -c2-`
+
+  \rm -f $tmpfile
+  lynx --dump --nolist "$url1" | grep -e "$userid" -e "$userid2" | \
+    grep -e "$guessedname" -e "$guessedname2" >! $tmpfile
+  lynx --dump --nolist "$url2" | grep -e "$userid" -e "$userid2" | \
+    grep -e "$guessedname" -e "$guessedname2" >> $tmpfile
+
+# Search for well-formatted names:
+
+  grep -e "<$userid" -e "($userid" $tmpfile | \
+  sed s/'('$userid/+-$userid/g | sed s/'<'$userid/+-$userid/g | \
+  cut -d'+-' -f 1 | sed s/'"'//g >! $namefile
+
+#   grep "$userid at" $tmpfile | sed s/$userid/+-$userid/g | \
+#   cut -d'+-' -f 1 | sed s/'"'//g | sed s/'<'//g | sed s/,//g  >> $namefile
+  
+  grep "mailto:$address" $tmpfile | sed s/'<\/a>'/+-/g | \
+  cut -d'+-' -f 1 | sed s/'>'/' '/g >> $namefile
+ 
+  grep "$address" $tmpfile | grep "From:" | sed s/$address/+-/g | \
+  cut -d'+-' -f 1 | sed s/'"'//g | sed s/'<'/' '/g >> $namefile
+ 
+#   grep "From:" $tmpfile | sed s/$address/+-/g | \
+#   cut -d'+-' -f 1 | sed s/'"'//g | sed s/'<'/' '/g >> $namefile
+ 
+  set nlines = `cat $namefile | wc -l`
+  if ($nlines > 0) then
+    if ($vb) cat $tmpfile
+#   Remove initials:
+    cat $namefile | sed s/"[A-Z]\.\ "//g >! .email2name.junk
+    mv .email2name.junk $namefile
+    set flag = 1
+    foreach i ( `seq $nlines` )
+      set line = ( `head -$i $namefile | tail -1` )
+      if ($#line == 0) goto NEXT
+      @ x1 = $#line - 1
+      @ x2 = $#line
+      if ($flag) then
+        \rm -f $tmpfile ; set flag = 0
+      endif
+      echo "$line[$x1] $line[$x2]" >> $tmpfile
+      NEXT:
+    end
+    sort $tmpfile | uniq
+  else
+    cat $tmpfile 
+  endif
+    
+  \rm -f $tmpfile $namefile  
+
+end
+# Done.
+
+if ($vb) echo "email2name: all done."
+
+FINISH:
+
+#=======================================================================

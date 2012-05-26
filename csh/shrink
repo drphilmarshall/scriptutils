@@ -1,0 +1,276 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   shrink
+#
+# PURPOSE:
+#   Shrink images for eg submission to astroph...
+#
+# USAGE:
+#       shrink [-t] file(s) [-o output]
+#
+# INPUTS:
+#   file(s)                Input file (or list of files if editing in place)
+#
+# OPTIONAL INPUTS:
+#   -o --output output    Write (single) output to a new file 
+#                            [def=rename original]
+#   --jpg                  Produce jpg output, not postscript
+#   --white                Insist on white background when converting
+#   --quality q            jpg quality factor (%, used in intermediate file)
+#   --rescale s            Rescaling factor (%, used in intermediate file)
+#   -h --help
+#
+# OUTPUTS:
+#   file (or output with -o)
+#
+# EXAMPLES:
+#
+#   shrink arse.eps --rescale 100 --quality 100
+# 
+#     shrink: reducing size of images for eg astro-ph submission
+#     compression parameters:
+#        jpg quality = 100%
+#        rescaling factor = 100%
+#        output file format: eps
+#     input file: 760K    arse.original.eps
+#     output file: 300K   arse.eps
+#       i.e. image was reduced to 39% of its original size
+# 
+#  shrink -r 40 -q 20 085914-06-15-caustic-projected.eps -o test.eps
+#  
+#    shrink: reducing size of images for eg astro-ph submission
+#    Compression parameters:
+#       jpg quality = 20%
+#       rescaling factor = 40%
+#       output file format: eps
+#    input file: 228K      085914-06-15-caustic-projected.eps
+#    output file: 32K      test.eps
+#      i.e. image was reduced to 14% of its original size
+# 
+# COMMENTS: 
+#   Tables of compression factors (%) given input quality and 
+#   rescaling factors
+#
+#   1) Test image was a 600x800 pixel photograph in postscript format, output
+#   was also postscript.
+# 
+#       r=20  30  40  50  60  70  80  90 100
+#   q=20  0%  0%  1%  1%  1%  1%  2%  2%  2%   
+#     30  0%  1%  1%  1%  1%  2%  2%  2%  3%   
+#     40  0%  1%  1%  1%  2%  2%  2%  3%  3%   
+#     50  0%  1%  1%  1%  2%  2%  3%  3%  4%   
+#     60  0%  1%  1%  2%  2%  3%  3%  4%  4%   
+#     70  1%  1%  1%  2%  3%  3%  4%  5%  5%   
+#     80  1%  1%  2%  2%  3%  4%  5%  6%  7%   
+#     90  1%  2%  3%  4%  6%  8%  9% 11% 12%   
+#    100  3%  6% 10% 14% 19% 24% 29% 34% 39%   
+# 
+#   2) Test image was a 3400x800 pixel plot in postscript format, output
+#   was also postscript.
+# 
+#        r=20   30   40   50   60   70   80   90  100
+#   q=20   5%   8%  14%  19%  26%  29%  36%  42%  45%   
+#     30   7%  10%  17%  24%  31%  36%  43%  50%  56%   
+#     40   7%  12%  19%  28%  36%  42%  49%  57%  63%   
+#     50   8%  14%  24%  31%  40%  47%  56%  63%  70%   
+#     60   8%  15%  26%  35%  45%  52%  63%  70%  77%   
+#     70  10%  17%  29%  40%  50%  59%  70%  78%  87%   
+#     80  12%  21%  35%  47%  59%  70%  82%  94% 101%   
+#     90  15%  29%  45%  59%  77%  91% 107% 122% 138%   
+#    100  29%  50%  77% 105% 136% 168% 203% 236% 270%   
+# 
+#     set index = ( 20 30 40 50 60 70 80 90 100 )
+#     echo "  r=$index"
+#     foreach q ( $index )
+#       echo -n "$q  "
+#       foreach r ( $index )
+#         set x = `shrink test2.eps -o shrunk.eps -r $r -q $q |\
+#                    grep reduced | awk '{print $6}'`
+#         echo -n "$x  "
+#       end
+#       echo " "
+#     end    
+#                     
+# DEPENDENCIES:
+#   convert / ImageMagick
+#   jpeg2eps
+#
+# BUGS:
+#   - resampling causes some images to aquire a solid black background. Try
+#     running without the -r option in this case.
+#  
+# REVISION HISTORY:
+#   2009-04-02  started Marshall (UCSB)
+#-
+#=============================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set autooutput = 1
+set output = 0
+set jpgoutput = 0
+set q = 0
+set s = 0
+set white = 0
+set files = ()
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case --{jpg}:
+      shift argv
+      set jpgoutput = 1
+      breaksw
+   case -q:
+      shift argv
+      set q = $argv[1]
+      shift argv
+      breaksw
+   case --{quality}:
+      shift argv
+      set q = $argv[1]
+      shift argv
+      breaksw
+   case -r:
+      shift argv
+      set s = $argv[1]
+      shift argv
+      breaksw
+   case --{rescale}:
+      shift argv
+      set s = $argv[1]
+      shift argv
+      breaksw
+   case --{white}:
+      shift argv
+      set white = 1
+      breaksw
+   case -o:           #  output to new file
+      shift argv
+      set output = $argv[1]
+      shift argv
+      breaksw
+   case --{output}:        
+      shift argv
+      set output = $argv[1]
+      shift argv
+      breaksw
+   case *:            #  list of files to be shrinkpsed
+      set files = ( $files $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------------
+
+if ($help || $#files == 0) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+echo " "
+echo "shrink: reducing size of images for eg astro-ph submission"
+
+if ($output != 0) then
+  if ($#files > 1) then
+    echo "output file $output specified, "
+    echo "  ignoring all input files except $files"
+  endif
+  set files = $files[1]
+  set autooutput = 0
+endif  
+
+echo "Compression parameters:"
+if ($q == 0) then
+  echo "  no jpg quality factor specified, using convert default"
+else  
+  echo "  jpg quality = ${q}%"
+endif  
+if ($s == 0) then
+  echo "  no rescaling factor specified, using convert default"
+else 
+  echo "  rescaling factor = ${s}%"
+endif  
+
+if ($jpgoutput) then
+  set ext = 'jpg'
+else
+  set ext = 'eps'
+endif  
+echo "   output file format: $ext"
+
+# ----------------------------------------------------------------------------
+
+foreach file ( $files )
+
+  if ($autooutput && $jpgoutput) then
+# Just file as input:
+    set input = ${file}
+    set output = ${file:r}.$ext
+  else if ($autooutput && ! $jpgoutput) then
+# Rename file as "original" except for extension:
+    set input = ${file:r}.original.${file:e}
+    set output = ${file:r}.$ext
+    cp $file $input 
+  else 
+# Only one file being worked on, use explicit output file name:
+    set input = $file
+  endif
+
+  echo -n "input file: "
+  du -h $input
+  set x1 = `du -k $input | awk '{print $1}'`
+  
+# First convert to temporary jpg: 
+  
+  set now = `date '+%Y%m%d-%H%M%S'`
+  set tmpfile = /tmp/shrink.$now.jpg
+  \rm -f $tmpfile
+  
+  set options = ""
+  if ($q != 0) set options = "$options -quality ${q}%"
+  if ($s != 0) set options = "$options -resample ${s}%x${s}%"
+  if ($white) set options = "$options -background white" 
+  echo "convert $options $input $tmpfile"
+  convert $options $input $tmpfile
+  
+# Now convert back to desired output format:
+
+  if ($jpgoutput) then
+    echo "cp $tmpfile $output"
+    cp $tmpfile $output
+  else
+    echo "jpeg2eps $tmpfile"
+    jpeg2eps $tmpfile
+    echo "mv $tmpfile:r.eps $output"
+    mv $tmpfile:r.eps $output
+  endif    
+  
+  echo -n "output file: "
+  du -h $output
+  set x2 = `du -k $output | awk '{print $1}'`
+  
+  set r = `echo $x1 $x2 | awk '{printf "%d", 100.0*$2/$1}'`
+  
+  echo "  i.e. image was reduced to ${r}% of its original size"
+  
+end
+
+FINISH:
+
+#=============================================================================

@@ -1,0 +1,216 @@
+#!/usr/local/bin/perl -w
+# ======================================================================
+#+
+$usage = "
+
+NAME
+        gallery.pl
+
+PURPOSE
+        Makes an (m x n) gallery of postscript images.
+
+USAGE
+        gallery [flags] [options] file*.ps
+
+FLAGS
+        -u      Print this message
+        -A4     Use A4 paper (def=USletter)
+
+INPUTS
+        file*.ps         List of postscript files
+
+OPTIONAL INPUTS
+        -o      file     Write output to \"file\" (def=gallery.ps)
+        -r      i        Image rotation angle (0,90,180,270 degrees, def=0)
+        -x      i        No. of panels in x direction
+        -y      i        No. of panels in y direction
+        -t               Title (filename) is added as a caption
+        -v      i        Verbosity (0, 1 or 2, default=0)
+        -k               Keep report from latex and dvips
+
+OUTPUTS
+        gallery.ps       or explicitly named output file
+
+OPTIONAL OUTPUTS
+
+COMMENTS
+
+EXAMPLES
+
+BUGS
+  - Little useful output to the screen
+  - No way to recover from latex error except ctrl-z ; kill
+  - Sensitive to too many images?
+
+REVISION HISTORY:
+  2005-08-15  Started Marshall (KIPAC)
+
+\n";
+#-
+# ======================================================================
+
+$sdir = $ENV{'SCRIPTUTILS_DIR'};
+require($sdir."/perl/esystem.pl");
+$doproc = 1;
+
+# Sort out options:
+
+use Getopt::Long;
+GetOptions("o=s", \$outfile,
+           "x=i", \$m,
+           "y=i", \$n,
+           "r=i", \$theta,
+           "A4", \$useA4,
+           "v=i", \$verb,
+           "t", \$titlise,
+           "k", \$keepreport,
+           "u", \$help
+           );
+
+(defined($help)) and die "$usage\n";
+$num=@ARGV;
+($num>0) or die "$usage\n";
+
+(defined($verb)) or ($verb = 0);
+
+(defined($outfile)) or ($outfile="gallery.ps");
+
+(defined($m)) or ($m = 2);
+(defined($n)) or ($n = 2);
+(defined($theta)) or ($theta = 0);
+(($theta==0) or ($theta==90) or ($theta==180) or ($theta==270)) or die "$usage\n";
+
+# Count postscript files, and read filenames into an array:
+
+$nfiles = 0;
+while (defined($x = shift)){
+    $file[$nfiles] = $x;
+    $nfiles++;
+}
+($nfiles==0) and die "ERROR: No files supplied.\n\n$usage\n";
+($nfiles>($m*$n)) and die "ERROR: too many files.\n\n$usage\n";
+
+
+# Write preamble of latex file:
+
+($verb>0) and print STDOUT "\nWriting latex file...\n";
+
+$root = "gallery";
+$texfile = $root.".tex";
+$auxfile = $root.".aux";
+$logfile = $root.".log";
+$dvifile = $root.".dvi";
+$reportfile = $root.".report";
+open (TEX, ">$texfile") or die "Couldn't open $texfile: $!";
+
+if (defined($useA4)) {
+
+print TEX "\\documentclass[11pt,a4paper,twoside]{article}\n";
+print TEX "\\setlength\\paperheight{29.7cm}\n";
+print TEX "\\setlength\\paperwidth{21.0cm}\n";
+print TEX "\\setlength\\voffset{-2.54cm}\n";
+print TEX "\\setlength\\hoffset{-2.54cm}\n";
+print TEX "\\setlength\\oddsidemargin{2.0cm}\n";
+print TEX "\\setlength\\evensidemargin{2.0cm}\n";
+print TEX "\\setlength\\topmargin{2.0cm}\n";
+print TEX "\\setlength\\textwidth{17.0cm}\n";
+print TEX "\\setlength\\textheight{25.7cm}\n";
+
+} else {
+
+print TEX "\\documentclass[11pt,letterpaper,twoside]{article}\n";
+print TEX "\\setlength\\paperheight{11in}\n";
+print TEX "\\setlength\\paperwidth{8.5in}\n";
+print TEX "\\setlength\\voffset{-1in}\n";
+print TEX "\\setlength\\hoffset{-1in}\n";
+print TEX "\\setlength\\oddsidemargin{0.5in}\n";
+print TEX "\\setlength\\evensidemargin{0.5in}\n";
+print TEX "\\setlength\\topmargin{0.5in}\n";
+print TEX "\\setlength\\textwidth{7in}\n";
+print TEX "\\setlength\\textheight{10in}\n";
+
+}
+print TEX "\\usepackage{epsfig}\n";
+print TEX "\\begin{document}\n";
+
+
+# Calculate minipage width and orientation:
+
+$dx = 1.0/$m - 0.02;
+if  (($theta==0) or ($theta==180)) {
+  $y = "width";
+} else {
+  $y = "height";
+}
+
+# m x n loop over filenames:
+
+$k=0;
+for ($j=0; $j<$n; $j++){
+
+  print TEX "\\begin{figure}[!t]\n";
+
+  for ($i=0; $i<$m; $i++){
+
+    $filenotfound = 0;
+    open (TEST, "$file[$k]") or $filenotfound = 1;
+    close(TEST);
+    ($filenotfound) and print "Warning: $file[$k] does not exist.\n";
+    
+    if ($filenotfound or $k >= $nfiles){
+      MakeBlankPS($file[0]);
+      $file[$k] = "blank.ps";
+    }
+    print TEX "\\begin{minipage}[b]{$dx\\linewidth}\n";
+    print TEX "\\centering\\epsfig{file=$file[$k],$y=\\linewidth,angle=$theta,clip=}\n";
+    ($titlise) and print TEX "\\caption{\$\\rm $file[$k]\$}\n";
+    
+    print TEX "\\end{minipage} \\hfill\n";
+
+    $k++
+
+  }
+
+  print TEX "\\end{figure}\n";
+  print TEX "\\vspace{-2\\baselineskip}\n";
+
+}
+print TEX "\\end{document}\n";
+close(TEX);
+
+# Now do system calls to latex and dvips, and clean up:
+
+($verb>0) and print STDOUT "Running latex...\n";
+&esystem("echo x | latex $texfile >& $reportfile",$doproc,$verb);
+($verb>0) and print STDOUT "Running dvips...\n";
+&esystem("dvips -f -Pcmz $dvifile -o $outfile >> $reportfile 2>&1",$doproc,$verb);
+&esystem("rm -f $dvifile $auxfile $logfile junk blank.ps",$doproc,$verb);
+($keepreport) or &esystem("rm -f $texfile $reportfile",$doproc,$verb);
+($verb>0) and print STDOUT "\nPostscript written to $outfile\n";
+($verb>0 and $keepreport) and print STDOUT "\nLaTeX report written to $reportfile\n";
+($verb>0 and $keepreport) and print STDOUT "\nLaTeX retained in $texfile\n\n";
+
+#END
+
+#=======================================================================
+#
+# sub esystem{
+# #    print STDERR "$_[0]\n";
+#     if ($doproc) {
+#         system($_[0]);
+#     }
+# }
+#
+#=======================================================================
+
+sub MakeBlankPS{
+    my ($template) = @_;
+
+$bpsfile="blank.ps";
+&esystem("echo '%!PS-Adobe-3.0' > $bpsfile",$doproc,0);
+&esystem("grep -e BoundingBox $template | grep -v Page >> $bpsfile",$doproc,0);
+&esystem("echo '%%Title: Blank postscript' >> $bpsfile",$doproc,0);
+&esystem("echo '%%EOF' >> $bpsfile",$doproc,0);
+}
+
+#=======================================================================

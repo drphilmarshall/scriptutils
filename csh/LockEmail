@@ -1,0 +1,79 @@
+#! /bin/tcsh
+# ==============================================================================
+#+
+# NAME:
+#   LockEmail
+#
+# PURPOSE:
+#   Prevent startup of Pine in a terminal for 2 hours
+# 
+# COMMENTS:
+#   Action is recursive!
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#   -d --delay n    Delay in hours before pine reopens [2] 
+#   -h --help
+#
+# OUTPUTS:
+#
+# EXAMPLES:
+#   LockEmail.csh         1.5
+#   LockEmail.csh -d      1.5
+#   LockEmail.csh --delay 1.5
+#   
+# BUGS:
+#
+# REVISION HISTORY:
+#   2006-11-20  started Marshall  (UCSB)
+#-
+# ==============================================================================
+
+# Default options:
+
+set help = 0
+set delay = 2
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:        #  Print help
+      shift argv
+      set help = 1
+      breaksw
+   case --{help}:        
+      shift argv
+      set help = 1
+      breaksw
+   case --{delay}:
+      shift argv
+      set delay = $argv[1]
+      shift argv
+      breaksw
+   case -d:
+      shift argv
+      set delay = $argv[1]
+      shift argv
+      breaksw
+   case *:         
+      shift argv
+      breaksw
+   endsw
+end
+
+# Online help:
+
+if ( $help ) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+  
+echo "Locking this terminal for $delay hours before restarting pine - "
+echo "  come back at `date -d'2 hours' +%H:%M`"
+  
+sleep ${delay}h 
+
+pine ; LockEmail --delay ${delay}
+
+FINISH:
+

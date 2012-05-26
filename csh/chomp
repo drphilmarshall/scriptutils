@@ -1,0 +1,224 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   chomp
+#
+# PURPOSE:
+#   Remove carriage return characters (appearing as <CR> or ^M)
+#   Analgous to perl command "chomp"
+#
+# COMMENTS:
+# 
+# Notes from http://www.computing.net/unix/wwwboard/forum/2451.html:
+# 
+# Sometimes these characters are placed in a file during a DOS to UNIX 
+# conversion (these characters can only be viewed using an editor such as 
+# vi, or by using the cat -v command to view the file). To remove these 
+# characters, one can use either the tr -d or sed s commands to delete 
+# the control characters from the file. You may also use the :%s/.$// 
+# command in vi to delete ^M characters).  
+# 
+# Refer to the ascii table (http://www.asciitable.com) to get the 
+# following brief list of control characters and their 
+# octal representation:
+# 
+# Oct: Dec: Hex: Name: Also known as:   Command:            
+# 000    0  0x00  NUL                                                
+# 001    1  0x01  SOH                   Control-A                    
+# 002    2  0x02  STX                   Control-B                    
+# 003    3  0x03  ETX                   Control-C                    
+# 004    4  0x04  EOT                   Control-D                    
+# 005    5  0x05  ENQ                   Control-E                    
+# 006    6  0x06  ACK                   Control-F                    
+# 007    7  0x07  BEL                   Control-G                    
+# 010    8  0x08  BS   backspace        Control-H                   
+# 011    9  0x09  HT   tab              Control-I                   
+# 012   10  0x0a  LF   new line         Control-J                   
+# 013   11  0x0b  VT                    Control-K                   
+# 014   12  0x0c  FF   new page         Control-L                   
+# 015   13  0x0d  CR   carriage return  Control-M                   
+# 016   14  0x0e  SO                    Control-N                    
+# 017   15  0x0f  SI                    Control-O                    
+# 020   16  0x10  DLE                   Control-P                    
+# 021   17  0x11  DC1  XON              Control-Q                    
+# 022   18  0x12  DC2                   Control-R                    
+# 023   19  0x13  DC3  XOFF             Control-S                    
+# 024   20  0x14  DC4                   Control-T                    
+# 025   21  0x15  NAK                   Control-U                    
+# 026   22  0x16  SYN                   Control-V                    
+# 027   23  0x17  ETB                   Control-W                    
+# 030   24  0x18  CAN                   Control-X                    
+# 031   25  0x19  EM                    Control-Y                    
+# 032   26  0x1a  SUB                   Control-Z                    
+# 
+# For example, ^M is represented by \015.
+# 
+# Use the following commands to remove ^M characters:
+# 
+#   cat file | tr -d "\015"
+# 
+# sed can also do this - but has its own names for the control characters:
+#  
+#   sed s/\\r//g ~/cr.txt
+#   
+#
+# USAGE:
+#       chomp [-t] file [-o outfile]
+#
+# INPUTS:
+#   file                   Input file (or list of files if editing in place)
+#
+# OPTIONAL INPUTS:
+#   -o --output            Write output to a new file
+#   -t --tr                Use tr instead of sed
+#   -s --string  string    Replace ^M with "string"
+#   -r --return            Replace ^M with carriage return (\n)
+#   -h --help
+#
+# OUTPUTS:
+#   file (or outfile with -o)
+#
+# EXAMPLES:
+#
+#   chomp cutandpastedfrombroswer.txt
+# 
+#
+# DEPENDENCIES:
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2007-12-18  started Marshall (UCSB)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set output = 0
+set usetr = 1
+set string = ''
+set files = ()
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -t:           #  use tr instead of sed
+      set usetr = 1
+      shift argv
+      breaksw
+   case --{tr}:  
+      set usetr = 1
+      shift argv
+      breaksw
+   case -s:           #  replace ^M with $string
+      shift argv
+      set string = "$argv[1]"
+      shift argv
+      breaksw
+   case --{string}:
+      shift argv
+      set string = "$argv[1]"
+      shift argv
+      breaksw
+   case --{substitute}:
+      shift argv
+      set string = "$argv[1]"
+      shift argv
+      breaksw
+   case -r:           #  replace ^M with \n 
+      set string = '\n'
+      shift argv
+      breaksw
+   case --{return}:
+      set string = '\n'
+      shift argv
+      breaksw
+   case -x:           #  replace ^M with whitespace 
+      set string = ' '
+      shift argv
+      breaksw
+   case --{space}:
+      set string = ' '
+      shift argv
+      breaksw
+   case --{sed}:  
+      set usetr = 0
+      shift argv
+      breaksw
+   case -o:           #  output to new file
+      shift argv
+      set output = $argv[1]
+      shift argv
+      breaksw
+   case --{output}:        
+      shift argv
+      set output = $argv[1]
+      shift argv
+      breaksw
+   case *:            #  list of files to be chomped
+      set files = ( $files $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help || $#files == 0) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+if ($output != 0) then
+  set files = $files[1]
+endif  
+
+foreach file ( $files )
+
+  set now = `date '+%Y%m%d-%H%M%S.%N'`
+  set tmpfile = /tmp/chomp.$now.tmp
+  if ($output == 0) then
+    set outfile = $file
+  else 
+    set outfile = $output
+  endif
+  \rm -f $tmpfile
+
+# First remove CRs: 
+
+  if ($usetr) then
+    if ($string == '') then
+      cat $file | tr -d "\015"  >! $tmpfile
+    else
+      cat $file | tr -s "\015" "${string}"  >! $tmpfile
+    endif
+  else
+    sed s/\\r/"${string}"/g $file  >! $tmpfile
+  endif  
+  mv -f $tmpfile $outfile
+  
+# Now get rid of bizarrities:
+
+  cat -v $outfile | sed s/'M- '/' '/g >! $tmpfile
+  mv -f $tmpfile $outfile
+  
+#  ls -l $outfile
+  
+end
+
+FINISH:
+
+#=======================================================================

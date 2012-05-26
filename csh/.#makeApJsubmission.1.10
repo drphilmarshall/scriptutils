@@ -1,0 +1,658 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   makeApJsubmission
+#
+# PURPOSE:
+#   Construct subdirectory with correctly formatted files ready for ApJ
+#   submission.
+#
+# COMMENTS:
+#
+# INPUTS:
+#   paper.tex       latex file, for paper to be submitted
+#
+# FLAGS:
+#   x               astroph submission *instead*
+#
+# OPTIONAL INPUTS:
+#   output          name of output directory
+#   -h --help
+#
+# OUTPUTS:
+#   outdir          output directory, with tarball, ready to be sent 
+#                   to ApJ
+#
+# EXAMPLES:
+#  makeApJsubmission  --clobber --output submit  spi.tex
+#
+# BUGS:
+#  - output is highly verbose, no way to switch this off
+#  - commands are not stored as documentation
+#  - only tested on well-formatted complete manuscript...
+#  - \\begin required for linux but not darwin when fixing \submitted
+#  - author and affiliation list generation is not robust...
+#  - ApJ want tables and figures at the end of the file, but this is stupid.
+#  - Script does not check that abstract is < 250 words...
+#
+# REVISION HISTORY:
+#   2006-05-12  started Marshall (KIPAC)
+#   2006-06-16  tables, README and email features all added  Marshall (KIPAC)
+#   2006-07-11  astroph capability, improved README  Marshall (KIPAC)
+#-
+#=======================================================================
+
+# Escape defaults
+unset noclobber
+unalias rm
+
+# Options and arguments:
+
+set narg = $#argv
+
+set help = 0
+set klobber = 0
+set outdir = 0
+set arxiv = 0
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case --{clobber}:  #  clobber output
+      shift argv
+      set klobber = 1
+      breaksw
+   case -x:           #  astroph submission
+      shift argv
+      set arxiv = 1
+      breaksw
+   case --{arxiv}:    #  astroph submission
+      shift argv
+      set arxiv = 1
+      breaksw
+   case -o:           #  named output
+      shift argv
+      set outdir = $argv[1]
+      shift argv
+      breaksw
+   case --{output}:   #  named output
+      shift argv
+      set outdir = $argv[1]
+      shift argv
+      breaksw
+   case *:            #  latex file, only uses last one on command line
+      set texfile = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ( $help || $narg == 0 ) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# Catch stupidities:
+
+echo "makeApJsubmission: preparing submission package for $texfile"
+if ($arxiv) then
+  echo "makeApJsubmission: package style is astro-ph"
+else
+  echo "makeApJsubmission: package style is ApJ" 
+endif
+  
+#-----------------------------------------------------------------------
+# Prepare directory:
+
+if ( $outdir == 0 ) then
+  if ($arxiv) then
+    set outdir = ${texfile:r}-astroph
+  else
+    set outdir = ${texfile:r}-ApJsubmit
+  endif
+endif  
+
+if ( -e $outdir ) then
+  echo "makeApJsubmission: directory $outdir already exists"
+  if ( $klobber ) then
+    \rm -rf $outdir
+    echo "makeApJsubmission: removed $outdir"
+  else  
+    goto finish
+  endif
+endif  
+mkdir -p $outdir
+echo "makeApJsubmission: made directory $outdir"
+
+#-----------------------------------------------------------------------
+# First check that latex compiles, and if it does, keep a copy of the nicely
+# formatted pdf!
+
+echo "makeApJsubmission: running latex on $texfile to check that it compiles..."
+
+set thistexfile = $texfile
+set logfile = $thistexfile:r.latexoutput
+set latexlogfile = $thistexfile:r.log
+
+echo "x" | latex $thistexfile >& $logfile
+echo "makeApJsubmission: and again"
+echo "x" | latex $thistexfile >>& $logfile
+echo "makeApJsubmission: and again"
+echo "x" | latex $thistexfile >>& $logfile
+
+# Now search for errors:
+
+grep -e 'Warning:' -e 'Error:' $latexlogfile  > $logfile
+
+set fail = 0
+set nwarnings = `grep -e 'Warning:' $logfile | wc -l`
+if ( $nwarnings > 0 ) set fail = 1
+set nerrors =   `grep  -e 'Error:' $logfile | grep -v OK | wc -l`
+if ( $nerrors > 0 ) set fail = 2
+
+if ( $fail > 0 ) then
+  echo "makeApJsubmission: received following messages from LaTeX:"
+  cat $logfile
+  set msgfile = $thistexfile:r.submitted.log
+  cp $thistexfile:r.log $msgfile
+  echo "makeApJsubmission: check for details with   more $msgfile"
+else
+  echo "makeApJsubmission: LaTeX compiled paper with no problems"
+endif
+
+if ( -e $thistexfile:r.dvi ) then
+  echo "makeApJsubmission: making postscript and pdf for checking..."
+  set psfile = $thistexfile:r.ps
+  \dvips -f -Pcmz $thistexfile:r.dvi -o $psfile >& junk ; \rm junk
+  set pdffile = $thistexfile:r.pdf
+  \ps2pdf $psfile >& junk ; \rm junk
+endif
+
+if ( $fail == 2 ) then
+  echo "makeApJsubmission: refusing to go on until you fix the LaTeX errors..."
+  goto finish
+else  
+  echo "makeApJsubmission: saving a copy of your nicely-formatted paper"
+  cp $pdffile $outdir/ms-emulateapj.pdf
+endif
+
+#-----------------------------------------------------------------------
+# Now process in ApJ format:
+
+set newtexfile = $outdir/ms.tex
+cp $texfile $newtexfile 
+echo "makeApJsubmission: made copy of latex file $newtexfile"
+ 
+# Documentclass detection:
+
+set line = `grep -n documentclass $newtexfile | grep -v '%\\' | cut -d':' -f1`
+grep -n documentclass $newtexfile | grep -v '%\\' | cut -d':' -f2 > junk
+echo -n "makeApJsubmission: documentclass line is " ; cat junk
+set class = `cat junk | cut -d'{' -f2 | cut -d'}' -f 1`
+\rm junk
+
+# ApJ: set document class correctly:
+
+if ($arxiv) then
+  echo "makeApJsubmission: - this is fine for astroph"
+  set classfile = ${class}.cls
+  if ( ! -e $classfile ) then
+    echo "makeApJsubmission: searching for ${classfile}..."
+    set texdirs = `echo $TEXINPUTS | sed s/:/\ /g`
+    set classfile = `find $texdirs | grep $classfile | uniq`
+  endif
+  cp $classfile $outdir/
+  echo "makeApJsubmission: ...copy made"
+else
+
+  set newcomm = '\documentclass[12pt,preprint]{aastex}'
+
+  @ line --
+  head -$line $newtexfile > ttttemp1.tex
+  echo "$newcomm" >> ttttemp1.tex
+  @ line ++
+  @ line ++
+  tail +$line $newtexfile >> ttttemp1.tex
+  mv ttttemp1.tex $newtexfile 
+
+  echo "makeApJsubmission: reset to $newcomm"
+
+  # Replace \submitted line:
+
+  set line = `grep -n '\submitted' $newtexfile | grep -v '%\\' | head -1 | cut -d':' -f1`
+  grep -n '\submitted' $newtexfile | grep -v '%\\' | head -1 | cut -d':' -f2 > junk
+  set test = `cat junk | wc -l`
+
+  if ($test > 0) then
+    echo "makeApJsubmission: detected \submitted line"
+    set text = `cat junk | cut -d'{' -f2 | cut -d'}' -f1`
+    @ line --
+    head -$line $newtexfile > ttttemp1.tex
+    echo '\\begin{center}\itshape{'"$text"'}\\end{center}' >> ttttemp1.tex
+    @ line ++
+    @ line ++
+    tail +$line $newtexfile >> ttttemp1.tex
+    mv ttttemp1.tex $newtexfile 
+    echo "makeApJsubmission: reset to standard centered italicised text"
+  endif
+  rm junk
+
+endif
+
+# Replace bibtex call with internalised bibliography:
+
+set line = `grep -n '\\bibliography{' $newtexfile | cut -d':' -f1`
+set test = $#line
+
+if ($test > 0) then
+  echo "makeApJsubmission: detected \\bibliography line"
+  grep -n '\\bibliography{' $newtexfile | cut -d':' -f2 > junk
+  set root = `cat junk | cut -d'{' -f2 | cut -d'}' -f1`
+  rm junk
+  
+  set bblfile = $root.bbl
+  if ( ! -e $bblfile ) then
+    set bibfile = $root.bib
+    if ( ! -e $bibfile ) then
+      echo "makeApJsubmission: bibtex database $bibfile not found"
+    else
+      bubble -f $texfile $bibfile
+      set bblfile = $texfile:r.bbl
+    endif
+  endif  
+
+  if ( -e $bblfile ) then
+
+    @ line --
+    head -$line $newtexfile > ttttemp1.tex
+
+    cat $bblfile >> ttttemp1.tex
+    @ line ++
+    @ line ++
+    tail +$line $newtexfile >> ttttemp1.tex
+    mv ttttemp1.tex $newtexfile 
+
+    echo "makeApJsubmission: bibliography internalised to latex file"
+  
+  endif
+  
+endif
+
+#-----------------------------------------------------------------------
+# Tables:
+
+# Get line numbers of tables, and excise to separate files:
+
+set firstlines = `grep -n 'begin{table' $newtexfile | grep -v '%' | cut -d':' -f1`
+
+set ntables = $#firstlines
+echo "makeApJsubmission: detected $ntables tables"
+
+set i=0
+while ( $i < $ntables )
+  @ i ++
+
+# Get table latex:
+  set firstline = `grep -n 'begin{table' $newtexfile | grep -v '%' |\
+                   head -1 | tail -1 | cut -d':' -f1`
+  set lastline  = `grep -n 'end{table'   $newtexfile | grep -v '%' |\
+                   head -1 | tail -1 | cut -d':' -f1`
+  @ nlines = $lastline - $firstline - 1
+  set tabfile = $outdir/tab${i}.tex
+  tail +${firstline} $newtexfile | head -${nlines} > $tabfile
+  echo "makeApJsubmission: scraped $nlines lines into $tabfile"
+
+# Now replace this with an input command:
+  
+  @ firstline = $firstline - 1 
+  @ lastline = $lastline + 1 
+  head -${firstline} $newtexfile > ttttemp1.tex
+  tail +${lastline} $newtexfile > ttttemp2.tex
+  
+  cat ttttemp1.tex > $newtexfile 
+  echo '\input{'$tabfile:t'}' >> $newtexfile
+  cat ttttemp2.tex >> $newtexfile 
+  
+# Clean up:
+
+  \rm ttttemp1.tex ttttemp2.tex
+     
+end
+
+#-----------------------------------------------------------------------
+# Figures:
+
+set correspondence = $outdir.figures.txt
+touch $correspondence ; rm $correspondence
+
+# Get line numbers of figures, and make temporary files:
+
+set firstlines = `grep -n 'begin{figure' $newtexfile | grep -v '%' | cut -d':' -f1`
+set lastlines  = `grep -n 'end{figure'   $newtexfile | grep -v '%' | cut -d':' -f1`
+
+set nfigures = $#firstlines
+echo "makeApJsubmission: detected $nfigures figures"
+
+set i=0
+while ( $i < $nfigures )
+  @ i ++
+
+# Get figure latex:
+
+  @ nlines = $lastlines[$i] - $firstlines[$i] - 1 
+#   echo "firstline = $firstlines[$i], lastline = $lastlines[$i], nlines = ${nlines}"
+  set figfile = $outdir/f${i}.tex
+  tail +${firstlines[$i]} $newtexfile | head -${nlines} > $figfile
+#   echo "makeApJsubmission: scraped $nlines lines into $figfile"
+
+# Search for all postscript files used:
+
+  set psfiles = ( `grep -e plotone -e plottwo $figfile | grep -v '%' | cut -d'{' -f2- | sed s/\{/\ /g | sed s/\}/\ /g` )
+  set npanels = $#psfiles
+  echo "makeApJsubmission: detected $npanels \plotone or \plottwo panels in figure $i"
+  if ($npanels == 0) then
+    set psfiles = `grep includegraphics $figfile | grep -v '%' | sed s/includegraphics/:/g | cut -d':' -f2 | cut -d'{' -f2 | cut -d'}' -f1`
+    set npanels = $#psfiles
+    echo "makeApJsubmission: detected $npanels \includegraphics panels in figure $i"
+  endif
+  if ($npanels == 0) then
+    echo "makeApJsubmission: could not read graphics typesetting"
+    goto finish
+  endif
+  
+# Copy all postscript files, and change latex:
+
+# First replace forward slashes with something else...
+  sed s/\\//XSLASHX/g $newtexfile > ttttemp1.tex 
+   
+  set char = ( a b c d e f g h i j k l m n o p q r s t u v w x y z ) 
+# Now loop over panels
+  if ( $npanels == 1 ) then
+    set epsfile = $outdir/f$i.eps
+    cp -v $psfiles[1] $epsfile >>& $correspondence
+    echo "makeApJsubmission: made copy of $psfiles[1] -> $epsfile"
+    set pattern1 = `echo $psfiles[1] | sed s/\\//XSLASHX/g`
+    set pattern2 = `echo $epsfile:t  | sed s/\\//XSLASHX/g`
+    cat ttttemp1.tex | sed s/$pattern1/$pattern2/g > ttttemp2.tex 
+    mv ttttemp2.tex ttttemp1.tex
+#     echo "makeApJsubmission: updated $newtexfile to use $epsfile"
+  else
+    set j=0
+    while ( $j < $npanels )
+      @ j ++
+      set epsfile = $outdir/f${i}${char[$j]}.eps
+      cp -v $psfiles[$j] $epsfile >>& $correspondence
+      echo "makeApJsubmission: made copy of $psfiles[$j] -> $epsfile"
+      set pattern1 = `echo $psfiles[$j] | sed s/\\//XSLASHX/g`
+      set pattern2 = `echo $epsfile:t   | sed s/\\//XSLASHX/g`
+      cat ttttemp1.tex | sed s/$pattern1/$pattern2/g > ttttemp2.tex 
+      mv ttttemp2.tex ttttemp1.tex
+#       echo "makeApJsubmission: updated $newtexfile to use $epsfile"
+    end
+  endif  
+
+# Finally put the slashes back!
+  cat ttttemp1.tex | sed s/XSLASHX/\\//g > $newtexfile 
+  \rm ttttemp1.tex
+
+# Clean up:
+
+  \rm $figfile
+#   echo "makeApJsubmission: removed $figfile"
+     
+end
+
+#-----------------------------------------------------------------------
+# Run latex to test for reference errors:
+
+echo "makeApJsubmission: running latex in directory $outdir"
+chdir $outdir
+set thistexfile = $newtexfile:t
+set logfile = $thistexfile:r.latexoutput
+
+echo "x" | latex $thistexfile >& $logfile
+echo "makeApJsubmission: and again"
+echo "x" | latex $thistexfile >>& $logfile
+echo "makeApJsubmission: and again"
+echo "x" | latex $thistexfile >>& $logfile
+
+# Now search for errors:
+
+grep -e 'Warning:' -e 'Error:' ms.log  > $logfile
+
+set fail = 0
+set nwarnings = `grep -e 'Warning:' $logfile | wc -l`
+if ( $nwarnings > 0 ) set fail = 1
+set nerrors =   `grep  -e 'Error:' $logfile | grep -v OK | wc -l`
+if ( $nerrors > 0 ) set fail = 2
+
+if ( $fail > 0 ) then
+  echo "makeApJsubmission: received following messages from LaTeX:"
+  cat $logfile
+  set msgfile = ../$texfile:r.submitted.log
+  cp $thistexfile:r.log $msgfile
+  echo "makeApJsubmission: check for details with   more $msgfile"
+else
+  echo "makeApJsubmission: LaTeX compiled paper with no problems"
+endif
+
+if ( -e $thistexfile:r.dvi ) then
+  echo "makeApJsubmission: making postscript for checking"
+  \dvips -f -Pcmz $thistexfile:r.dvi -o $thistexfile:r.ps >& junk
+  rm junk
+  set psfile = ../$outdir.check.ps
+  mv $thistexfile:r.ps $psfile
+  echo "makeApJsubmission: be sure to   gv $psfile:t"
+endif
+
+if ( $fail == 2 ) then
+  echo "makeApJsubmission: refusing to go on until you fix the LaTeX errors..."
+  goto finish
+else  
+  rm $logfile *.log *.dvi *.aux 
+endif
+
+# ----------------------------------------------------------------------
+# Write README file, based on that required for ftp submission:
+# 
+# File containing information pertinent to the efficient processing of
+# your manuscript: the type of submission (new, revised, or final); the
+# name of the corresponding author along with a street address (no PO box
+# number), phone number, FAX number, and e-mail address; a list of the
+# names of the files being submitted; and any other information that may
+# be helpful to the editorial or production offices
+
+set readme = README
+
+echo "\
+==============================================================================\
+" > $readme
+date >> $readme
+
+if ($arxiv) then
+echo "\
+README file for astroph submission\n" >> $readme
+else
+echo "\
+README file for ApJ submission\n" >> $readme
+echo "Type of submission: [new, revised, or final?]" >> $readme
+endif
+
+echo "\
+==============================================================================\
+" >> $readme
+
+set name = `finger $USER | head -1 | cut -d":" -f 3`
+echo "Corresponding author: $name\n" >> $readme
+echo "Correspondence address:\
+  123 ABC Street,\
+  Toytown,\
+  CA 94301" >> $readme
+echo "Correspondence phone no.: +xx xxx xxx xxxx" >> $readme
+echo "Correspondence fax no.: +xx xxx xxx xxxx" >> $readme
+echo "Correspondence email: $USER@$HOST.utoytown.edu" >> $readme
+
+echo "\nList of files being submitted:\n" >> $readme
+\ls -1 * >> $readme
+echo " " >> $readme
+
+echo "\
+Article details:\
+----------------\n" >> $readme
+
+set title = `grep '\\title{' $thistexfile | cut -d'{' -f2 | cut -d'}' -f1`
+echo "Title:\n$title\n" >> $readme
+
+set shorttitle = `grep '\shorttitle{' $thistexfile | cut -d'{' -f2 | cut -d'}' -f1`
+echo "Short title:  $shorttitle\n" >> $readme
+
+# grep '\author{' $thistexfile | cut -d'{' -f2 | cut -d'\' -f1 | \
+#   sed s/~/\ /g > authors.txt
+grep '\author{' $thistexfile | cut -d'{' -f2- | \
+  sed s/~/\ /g | sed s/\{//g | sed s/\}//g | \
+  sed s/\\\$//g | sed s/\\^//g | \
+  sed s/\\\\altaffilmark/\ /g > authors.txt
+echo "Author list:\n  " >> $readme
+cat authors.txt >> $readme 
+echo " " >> $readme
+rm authors.txt
+
+set shortauthors = `grep '\shortauthors{' $thistexfile | \
+  cut -d'{' -f2 | cut -d'}' -f1 | sed s/~/\ /g`
+echo "Short author list:  $shortauthors\n\n" >> $readme
+
+# grep '\altaffiltext{' $thistexfile | grep -v 'Fellow' | \
+#   cut -d'{' -f3 | cut -d'}' -f1 | \
+#   sed s/~/\ /g > affiliations.txt
+# grep '\affil{' $thistexfile | grep -v 'Fellow' | \
+#   cut -d'{' -f2 | cut -d'}' -f1 | \
+#   sed s/~/\ /g > affiliations.txt
+grep '\altaffiltext{' $thistexfile | grep -v 'Fellow' | \
+  cut -d'{' -f2- | sed s/~/\ /g | \
+  sed s/\{/\ /g | sed s/\}//g > affiliations.txt
+
+echo "Affiliations:\n" >> $readme
+cat affiliations.txt >> $readme 
+echo "\n" >> $readme
+rm affiliations.txt
+
+# Now snip out abstract:
+# BUG! Script does not check that abstract is < 250 words...
+
+echo "Abstract:\n" >> $readme
+set firstline = `grep -n "begin{abstract" $thistexfile | grep -v '%' | cut -d':' -f1`
+set lastline  = `grep -n "end{abstract"   $thistexfile | grep -v '%' | cut -d':' -f1`
+@ firstline ++
+@ lastline --
+@ nlines = $lastline - $firstline - 1
+tail +${firstline} $thistexfile | head -${nlines} >> $readme
+echo " " >> $readme
+
+if (! $arxiv) then
+echo "\
+Other information:\
+------------------\n" >> $readme
+
+echo "Page charges:\n\
+Please provide information regarding who will be covering the Page Charges\
+for this submission.\n\n" >> $readme
+  	
+echo "Non-preferred reviewers:\n\
+Identify any people you believe should not be asked to review this \
+manuscript. Briefly explain why.\n\n" >> $readme
+  	 
+echo "Consent for pre-publication options:\n\
+This manuscript may be included in published lists of submitted papers [yes/no]\
+This manuscript may be included in published lists of accepted papers [yes/no]\n\n"  >> $readme 		
+  	 
+echo "Notes: \n\
+Any information the journal office or publisher may need to process your \
+submission. In particular, identify any parts of your submission that are for \
+online publication only (e.g., color figures).\n" >> $readme
+
+endif
+
+
+echo "\
+==============================================================================\
+" >> $readme
+
+echo "makeApJsubmission: made README file"
+
+# ----------------------------------------------------------------------
+# Write email to editor:
+
+if (! $arxiv) then
+
+set email = ../$outdir.email.txt
+
+echo "\
+\
+Dear Sir,\
+\
+I have submitted an article, entitled \
+\
+   $title\
+\
+to the Astrophysical Journal via the online system. The submission consists\
+of the manuscript [ms.tex], $ntables tables, $nfigures figures, and a\
+pdf copy of the manuscript formatted with the emulateapj package.\
+\
+Do please let me know if you require anything further - I look forward to\
+hearing from you soon.\
+\
+Regards,\
+\
+Dr. $name\
+\
+" > $email
+ 
+echo "makeApJsubmission: written skeleton email to editors: $email:t"
+
+endif
+
+#-----------------------------------------------------------------------
+# Make a tarball for submission:
+
+set tarball = ../$outdir.tar.gz
+
+if ($arxiv) then
+  chdir ..
+  tar cvzf $tarball $outdir >& /dev/null
+else
+  tar cvzf $tarball * >& /dev/null
+endif
+
+echo "makeApJsubmission: made tarball $tarball:t"
+echo "makeApJsubmission: tarball contents:"
+tar tvzf $tarball
+if (! $arxiv) then
+  echo "makeApJsubmission: note that the tarball does not expand to a directory"
+endif
+
+#-----------------------------------------------------------------------
+
+echo "makeApJsubmission: completed submission directory:   $outdir" 
+echo "makeApJsubmission: figure details are in $correspondence"
+echo "makeApJsubmission: $readme NEEDS EDITING MANUALLY"
+echo "makeApJsubmission: then rebuild tarball with:"
+if ($arxiv) then
+  echo "makeApJsubmission:   tar cvzf $tarball $outdir"
+else
+  echo "makeApJsubmission:   cd $outdir ; tar cvzf $tarball *"
+endif
+echo "makeApJsubmission: all done" 
+
+finish:
+
+#=======================================================================

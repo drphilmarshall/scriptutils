@@ -1,0 +1,13 @@
+#!/bin/tcsh
+
+setenv DISPLAY :0.0
+
+# xv $SCRIPTUTILS_DIR/csh/teatime.jpg & 
+# eog -f $SCRIPTUTILS_DIR/csh/teatime.jpg &
+eog $SCRIPTUTILS_DIR/csh/teatime.jpg &
+
+# sleep 10 
+
+finish:
+
+

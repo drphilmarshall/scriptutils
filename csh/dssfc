@@ -1,0 +1,325 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   dssfc
+#
+# PURPOSE:
+#   Query DSS website for finding chart
+#
+# COMMENTS:
+#
+# USAGE:
+#       dssfc [-f -c -s -h -x][-r radius -m maglimit] ra dec
+#
+# INPUTS:
+#   ra dec                 position of object in degrees
+#
+# OPTIONAL INPUTS:
+#   -w --field-size     w  field size / arcmin
+#   -m --mag-limit      m  magnitude limit (R-band Vega)
+#   -i --invert            invert colour scale of image (to white on black!)
+#   --hms                  coords supplied in hms dms not degrees
+#   --overlay              overplot objects, magnitudes etc
+#   -x --clobber           overwrite current versions
+#   --clean                clean up afterwards (only leave postscript)
+#   -h --help
+#
+# OUTPUTS:
+#   DSShhmmss.pp+ddmmss.s_rxrarcmin.jpg
+#
+# EXAMPLES:
+#
+#   SL2S lens:
+#
+#     dssfc --field-size 30   32.1184002 -4.9475868
+#
+#     dssfc --field-size 3  --hms  02:08:28.416 -04:56:51.31
+# 
+#
+# DEPENDENCIES:
+#   
+#   skycoor, wget
+#
+# BUGS:
+#   - Overlay/catloguing not yet coded
+#  
+# REVISION HISTORY:
+#   2007-09-07  started Marshall (KIPAC)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set narg = $#argv
+
+# Set defaults:
+
+unset ra0
+unset dec0
+
+set klobber = 0 
+
+set maglimit = 19
+set field = 30
+set invert = 0
+set hms = 0
+
+set help = 0
+set clean = 0
+
+#Escape shell defaults
+unset noclobber
+unalias rm
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -w:        #  field size
+      shift argv
+      set field = $argv[1]
+      shift argv
+      breaksw
+   case --{field-size}:
+      shift argv
+      set field = $argv[1]
+      shift argv
+      breaksw
+   case -m:        #  magnitude limit
+      shift argv
+      set maglimit = $argv[1]
+      shift argv
+      breaksw
+   case --{mag-limit}:
+      shift argv
+      set maglimit = $argv[1]
+      shift argv
+      breaksw
+   case -i:        #  Invert colour scale?
+      shift argv
+      set invert = 1
+      breaksw
+   case --{clean}:        
+      shift argv
+      set clean = 1
+      breaksw
+   case --{invert}:        
+      shift argv
+      set invert = 1
+      breaksw
+   case --{hms}:   #  Coords input in hms dms?       
+      shift argv
+      set hms = 1
+      breaksw
+   case -x:        #  Clobber?
+      shift argv
+      set klobber = 1
+      breaksw
+   case --{clobber}:        
+      shift argv
+      set klobber = 1
+      breaksw
+   case *:         #  ra and dec!
+      set ra0 = $argv[1]
+      shift argv
+      set dec0 = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+SETUP:
+
+if ( $help || $narg < 2 ) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+echo "dssfc: query the DSS website for finding chart images"
+
+# Check for software availabity:
+
+set nowget = `which wget |& grep "not found" | wc -l`
+if ($nowget) then
+  echo "${0:t:r}: ERROR: no wget for submitting data to web"
+  goto FINISH
+endif
+set noskycoor =  `which skycoor |& grep "not found" | wc -l` 
+if ($noskycoor) then
+  echo "${0:t:r}: ERROR: no skycoor program for translating coordinates"
+  echo "${0:t:r}: You can download it from: \
+  http://tdc-www.harvard.edu/software/wcstools/skycoor.html"
+  goto FINISH
+endif
+
+
+# Parse inputs:
+
+if ( ! $?ra0 ) then
+  echo "dssfc: no RA specified"
+  goto FINISH
+endif
+if ( ! $?dec0 ) then
+  echo "dssfc: no dec specified"
+  goto FINISH
+endif
+
+# Convert to degrees:
+unset rahms
+unset dechms
+if ($hms) then
+
+  set rahms =  `echo "$ra0" | sed s/:/\ /g`
+  set dechms = `echo "$dec0" | sed s/\:/\ /g`
+  set line = `skycoor -d $ra0 $dec0`
+  set ra0 = $line[1]
+  set dec0 = $line[2]
+  echo "dssfc: required position: $ra0 $dec0"
+
+endif 
+
+if ($klobber) echo "dssfc: clobbering existing files"
+
+#-----------------------------------------------------------------------
+IAUNAME:
+
+if ( ! $?rahms ) then
+  set line = `skycoor $ra0 $dec0`
+  set rahms = `echo "$line[1]" | sed s/:/\ /g`
+endif 
+set rah = $rahms[1]
+set ram = $rahms[2] 
+set ras = `echo "$rahms[3]" | cut -c 1-2`
+
+if ( ! $?dechms ) then
+  set line = `skycoor $ra0 $dec0`
+  set dechms = `echo "$line[2]" | sed s/:/\ /g`
+endif
+set decd = $dechms[1]
+set decm = $dechms[2] 
+set decs = `echo "$dechms[3]" | cut -c 1-2`
+set decsign = ''
+ 
+echo "dssfc: ra (deg): $ra0"
+echo "dssfc: dec (deg): $dec0"
+
+echo "dssfc: ra (J2000): $rah $ram $ras"
+echo "dssfc: dec (J2000): $decsign$decd $decm $decs"
+
+set name = "DSSJ$rah$ram$ras$decsign$decd$decm$decs"
+
+echo "dssfc: IAU name of search position: $name"
+
+set fileroot = ${name}_${field}x${field}arcmin
+
+set fitsfile = ${fileroot}.fits
+set logfile = ${fitsfile:r}_wget.log
+set psfile = ${fileroot}.ps
+set regfile = ${fileroot}.reg
+
+#-----------------------------------------------------------------------
+FINDINGCHART:
+
+# Download cutout FITS image:
+
+if ($klobber) then
+  echo "dssfc: clobbering old finding chart image"
+  \rm -f $fitsfile $logfile
+endif
+
+if ( ! -e $psfile ) then
+
+# Construct url and wget:
+
+  echo "dssfc: downloading image..."
+  set url = ""
+  set url = "${url}http://stdatu.stsci.edu/cgi-bin/dss_search?&f=fits&s=TRUE&v=poss2ukstu_red"
+  set url = "${url}&r=${ra0}"
+  set url = "${url}&d=${dec0}"
+  set url = "${url}&w=${field}"
+  set url = "${url}&h=${field}"
+  set url = "${url}&submit=Fetch%20image&dssget=get"
+    
+  wget "$url" -O $fitsfile -o $logfile
+
+else
+  echo "dssfc: no image download is necessary"
+  goto FINISH
+endif
+
+if ( ! -e $fitsfile ) then
+  echo "dssfc: finding chart image download failed"
+  echo "dssfc: read wget log:\n  $logfile"
+  echo "dssfc: check url:\n  $url"
+  goto FINISH
+else 
+  echo "dssfc: finding chart FITS image:\n  $fitsfile"
+endif  
+
+# Clean up 
+if ( -e $logfile ) \rm $logfile
+
+#-----------------------------------------------------------------------
+POSTSCRIPT:
+
+if ($klobber) then
+  \rm -f $psfile $regfile
+endif
+
+if ( ! -e $psfile ) then
+
+  set nx = `imhead $fitsfile | grep 'NAXIS1  =' | cut -d'/' -f1 | cut -d'=' -f2`
+  set ny = `imhead $fitsfile | grep 'NAXIS2  =' | cut -d'/' -f1 | cut -d'=' -f2`
+  set dy = `echo "$ny / 20" | bc` 
+
+  set x1 = 0
+  set y1 = `echo "$ny - $dy" | bc`
+  set x2 = $nx
+  set y2 = $y1
+  set x3 = $dy
+  set y3 = $dy
+  set x4 = `echo "$nx / 2" | bc`
+  set y4 = $dy
+
+  echo "# Region file format: DS9 version 4.0\
+# Filename: $fitsfile\
+global color=green font='helvetica 10 normal' select=1 highlite=1 edit=1 move=1 delete=1 include=1 fixed=0 source\
+image\
+# ruler($x1,$y1,$x2,$y2) ruler=image arcmin color=black width=2 font='helvetica 10 bold'\
+# compass($x3,$y3,40) compass=image {N} {E} 1 1 color=black width=2 font='helvetica 10 bold'\
+# text($x4,$y4) color=black width=2 font='helvetica 18 bold' text={$name}" > $regfile
+
+  if ($nx > 300) then
+    set scale = 'squared'
+  else  
+    set scale = 'linear'
+  endif  
+
+  ds9 -invert -scale $scale   $fitsfile \
+      -zoom to fit -view colorbar no -region $regfile \
+      -print destination file -print filename $psfile -print -exit
+
+  echo "dssfc: finding chart postscript file:\n  $psfile"
+
+endif
+
+#-----------------------------------------------------------------------
+ENDGAME:
+
+echo "dssfc: all done"
+
+if ($clean) \rm -f $fitsfile $regfile $logfile
+
+FINISH:
+
+#=======================================================================

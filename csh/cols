@@ -1,0 +1,149 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   cols
+#
+# PURPOSE:
+#   csh implemtation of Raphael Gavazzi's cols utility - 
+#   print out column numbers, names, and example values for 
+#   a text catalogue. 
+#
+# COMMENTS:
+#   imcat catalogues have the required header line as the last thing before 
+#   the data start.
+# 
+# USAGE:
+#       cols [-n row] file
+#
+# INPUTS:
+#   file                   Input text catalogue file
+#
+# OPTIONAL INPUTS:
+#   -n                     Print the values in the nth row as an example [1]
+#   -h --help
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#
+# DEPENDENCIES:
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2008-08-03  started Marshall (UCSB)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set file = 0
+set n = 1
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case -n:           #  print nth row
+      shift argv
+      set n = $argv[1]
+      shift argv
+      breaksw
+   case *:            #  file to be listed 
+      set file = $argv[1]
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help || $file == 0) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# Get header line with column names, measure max width.
+# This will not work for SExtractor catalogues - need to compare no of fields
+# in data with no of fields in alleged namelist:
+
+# PJM 2009-01-09: ignore all lines with '##' as being comments intesrpersed 
+# in catalogue...
+
+
+set names = `grep -v '##' $file | grep -e '#' | tail -1 | sed s/'#'/''/g | awk '{print $0}'`
+set values = `grep -v '#' $file | head -n $n | tail -1 | awk '{print $0}'`
+
+if ($#names != $#values) then
+# File is not of format we were expecting - try the SExtractor format instead!
+  set sids = `grep -e '#' $file | awk '{print $2}'`  
+  set snames = `grep -e '#' $file | awk '{print $3}'`  
+  if ($sids[$#sids] != $#values) then
+    echo "ERROR: unrecognised catalogue format:"
+    echo "       found $#snames field names, and $#values field values"
+    goto FINISH
+  endif
+# If we got this far its a SExtractor catalogue - and we have to adjust the 
+# names a little bit. Here's the problem:
+# i=29 29 KRON_RADIUS     Kron apertures in units of A or B
+# i=30 30 FLUX_RADIUS     Fraction-of-light radii                         [pixel]
+# i=31
+# i=32
+# i=33 33 FWHM_IMAGE      FWHM assuming a gaussian core                   [pixel]
+# i=34 34 CLASS_STAR      S/G classifier output
+# i=35 35 FLAGS           Extraction flags
+  set names = ()
+  set j = 1
+  foreach i ( `seq $sids[$#sids]` )
+    if ($sids[1] == $i) then
+      set name = $snames[1]
+      shift sids
+      shift snames
+    endif    
+    set names = ( $names $name )
+  end    
+endif    
+
+set namewidth = 0
+foreach i ( `seq $#names` )
+  set width = `echo "$names[$i]" | wc -c`
+  if ($width > $namewidth) set namewidth = $width
+end  
+
+# Get data line, measure max width:
+
+set valuewidth = 0
+foreach i ( `seq $#values` )
+  set width = `echo "$values[$i]" | wc -c`
+  if ($width > $valuewidth) set valuewidth = $width
+end  
+
+if ($#names < 100) then
+  set idwidth = 2
+else if ($#names < 1000) then 
+  set idwdith = 3
+endif  
+
+# Print to stdout:
+
+foreach i ( `seq $#names` )
+  echo "$i    $names[$i]     $values[$i]" | \
+    awk '{printf "%'$idwidth's %'$namewidth's %'$valuewidth's\n", $1,$2,$3}'
+end  
+
+FINISH:
+
+#=======================================================================

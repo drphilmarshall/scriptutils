@@ -1,0 +1,119 @@
+#!/bin/tcsh
+#===============================================================================
+#+
+# NAME:
+#   slavecheck
+#
+# PURPOSE:
+#   Check work levels of slave machines
+#
+# COMMENTS:
+#
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#   -f file   Use plain text file listing worker names, default is .slaves
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#   > slavecheck -f .kilboxes
+#   ki-rh1: 15:31:01 up 11 days, 3:14, 1 user, load average: 0.00, 0.00, 0.00
+#   ki-rh2: 15:31:01 up 81 days, 13:17, 2 users, load average: 0.00, 0.00, 0.00
+#   ki-rh3: 15:31:02 up 11 days, 4:38, 26 users, load average: 0.00, 0.00, 0.00
+#   ki-rh4: 15:31:02 up 3 days, 3:42, 1 user, load average: 0.00, 0.00, 0.00
+#   ki-rh5: 15:31:03 up 9 days, 20:08, 2 users, load average: 0.00, 0.00, 0.00
+#   ki-rh6: 15:31:03 up 27 days, 1:22, 3 users, load average: 0.00, 0.00, 0.00
+#   ki-rh7: 15:31:04 up 11 days, 6:57, 2 users, load average: 0.00, 0.00, 0.00
+#   ki-rh8: 15:31:04 up 81 days, 13:11, 23 users, load average: 0.00, 0.00, 0.00
+#   ki-rh9: 15:31:04 up 9 days, 23:02, 1 user, load average: 0.09, 0.04, 0.01
+#   ki-rh10: 15:31:05 up 3 days, 2:13, 1 user, load average: 0.00, 0.00, 0.00
+#   ki-rh11: 15:31:05 up 6 days, 1:27, 2 users, load average: 0.00, 0.00, 0.00
+#   ki-rh12: 15:31:06 up 2 days, 3:13, 3 users, load average: 0.00, 0.00, 0.00
+#   ki-rh13:
+#   ki-rh14: 15:31:09 up 3 days, 2:12, 8 users, load average: 0.11, 0.30, 0.43
+#   ki-rh15: 15:31:09 up 52 days, 3 min, 2 users, load average: 0.00, 0.00, 0.00
+#   ki-rh16: 15:31:10 up 45 days, 5:06, 13 users, load average: 0.01, 0.00, 0.00
+#   ki-rh17: 15:31:10 up 20 days, 4:55, 8 users, load average: 0.00, 0.00, 0.00
+#   ki-rh18: 15:31:11 up 41 days, 1:42, 1 user, load average: 0.00, 0.00, 0.00
+#   ki-rh19: 15:31:11 up 10 days, 5:00, 10 users, load average: 0.00, 0.00, 0.00
+#   ki-rh20:
+#
+# BUGS:
+#   - Have to type password many times if ssh keys are not set
+#
+# REVISION HISTORY:
+#   2005-09-03  started Marshall (KIPAC)
+#-
+#===============================================================================
+
+# Options and arguments:
+
+set help = 0
+set file = $HOME/.slaves
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -u:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case -h:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case --{help}:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case -f:        #  file of slave machine names
+      shift argv
+      set file = $argv[1]
+      shift argv
+      breaksw
+   case *:         #  command line dross
+      shift argv
+      breaksw
+   endsw
+end
+
+#-------------------------------------------------------------------------------
+
+# Catch stupidities:
+
+if ( $help == 1 ) then
+  echo "slavecheck: usage:"
+  echo "         slavecheck [-f file] "
+  goto FINISH
+endif
+
+if ( ! -e $file ) then
+  echo "ERROR: slaves file $file does not exist, aborting"
+  goto FINISH
+endif  
+
+#-------------------------------------------------------------------------------
+
+set slaves = `cat $file | cut -d":" -f 1`
+
+set k = 0
+while ( $k < $#slaves )  
+
+  @ k ++
+  
+# First check if we are already on a slave - no need to ssh if so!  
+  if (${HOST} == $slaves[$k]) then
+    set x = `uptime`
+  else
+    set x = `/usr/bin/ssh -q $slaves[$k] uptime`
+  endif
+
+  echo "${slaves[$k]}: $x"
+  
+end
+
+FINISH:
+
+#===============================================================================
+

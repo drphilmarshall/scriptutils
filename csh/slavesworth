@@ -1,0 +1,140 @@
+#!/bin/tcsh
+#===============================================================================
+#+
+# NAME:
+#   slavesworth
+#
+# PURPOSE:
+#   Print specs of slave machines, overwriting slaves file with more information
+#   about processor etc
+#
+# COMMENTS:
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#   -f file   Use plain text file listing worker names, default is .slaves
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#   > slavesworth -f .kilboxes
+#   ....................
+#   ki-rh1: 1 x 2.39 GHz processor(s), 499 MB RAM
+#   ki-rh2: 4 x 3.05 GHz processor(s), 2006 MB RAM
+#   ki-rh3: 2 x 2.39 GHz processor(s), 2006 MB RAM
+#   ki-rh4: 4 x 3.05 GHz processor(s), 3009 MB RAM
+#   ki-rh5: 2 x 2.99 GHz processor(s), 1000 MB RAM
+#   ki-rh6: 4 x 3.05 GHz processor(s), 2006 MB RAM
+#   ki-rh7: 2 x 3.19 GHz processor(s), 2006 MB RAM
+#   ki-rh8: 2 x 2.99 GHz processor(s), 992 MB RAM
+#   ki-rh9: 1 x 2.39 GHz processor(s), 491 MB RAM
+#   ki-rh10: 2 x 3.19 GHz processor(s), 1000 MB RAM
+#   ki-rh11: 2 x 3.19 GHz processor(s), 1000 MB RAM
+#   ki-rh12: 2 x 3.19 GHz processor(s), 1000 MB RAM
+#   ki-rh13: 0 x 0.00 GHz processor(s), 0 MB RAM
+#   ki-rh14: 2 x 3.19 GHz processor(s), 2005 MB RAM
+#   ki-rh15: 2 x 2.79 GHz processor(s), 999 MB RAM
+#   ki-rh16: 1 x 1.99 GHz processor(s), 498 MB RAM
+#   ki-rh17: 2 x 3.19 GHz processor(s), 1000 MB RAM
+#   ki-rh18: 2 x 3.39 GHz processor(s), 999 MB RAM
+#   ki-rh19: 2 x 3.39 GHz processor(s), 999 MB RAM
+#   ki-rh20: 0 x 0.00 GHz processor(s), 0 MB RAM
+#
+# BUGS:
+#   - Have to type password many times if ssh keys are not set
+#   - No flag for unavailable machines
+#
+# REVISION HISTORY:
+#   2005-09-03  started Marshall (KIPAC)
+#-
+#===============================================================================
+
+# Options and arguments:
+
+set help = 0
+set file = $HOME/.slaves
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -u:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case -h:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case --{help}:        #  get help
+      shift argv
+      set help = 1
+      breaksw
+   case -f:        #  file with slave names
+      shift argv
+      set file = $argv[1]
+      shift argv
+      breaksw
+   case *:         #  command line dross
+      shift argv
+      breaksw
+   endsw
+end
+
+#-------------------------------------------------------------------------------
+
+# Catch stupidities:
+
+if ( $help == 1 ) then
+  echo "slavesworth: usage:"
+  echo "         slavesworth [-f file] "
+  goto FINISH
+endif
+
+if ( ! -e $file ) then
+  echo "ERROR: slaves file $file does not exist, aborting"
+  goto FINISH
+endif  
+
+set test = `which cpuspecs | grep "Command not found"`
+
+if ( $#test != 0 ) then
+  echo "ERROR: could not find cpuspecs command, aborting."
+  goto FINISH
+endif  
+
+#-------------------------------------------------------------------------------
+
+set slaves = `cat $file | cut -d":" -f 1`
+set masters = `cat $file | cut -d":" -f 2`
+
+\rm $file
+
+set k = 0
+while ( $k < $#slaves )  
+
+  @ k ++
+  
+# First check if we are already on a slave - no need to ssh if so!  
+  if ($HOST == $slaves[$k]) then
+    set line = `cpuspecs`
+  else
+    set line = `ssh -q $slaves[$k] cpuspecs`
+  endif
+  
+  if ( $#line == 0 ) then
+    echo $slaves[$k]': '$masters[$k]': 0 x 0.00 GHz processor(s), 0 MB RAM' >> $file
+  else
+    echo $slaves[$k]': '$masters[$k]': '$line >> $file
+  endif  
+
+  echo ".\c"
+
+end
+echo " "
+
+cat $file
+
+FINISH:
+
+#===============================================================================
+

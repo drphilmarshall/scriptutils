@@ -1,0 +1,396 @@
+#!/bin/tcsh
+#===============================================================================
+#+
+# NAME:
+#   slave
+#
+# PURPOSE:
+#   Run command on a slave machine, in an xterm.
+#
+# COMMENTS:
+#   Machine selection is somewhat conservative - need better way of measuring
+#   idle time.
+#
+# INPUTS:
+#   Command string
+#
+# OPTIONAL INPUTS:
+#   -f file   Use plain text file listing worker names, default is .slaves
+#   -n name   Explicitly name a slave machine
+#   -p time   Have window persist for $time seconds
+#   -w time   Wait for a processor to become available
+#   -v        Verbose operation
+#   -h        Print help
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#   > slave -p 20 -f .kilboxes echo Hello World
+#   > slave -p 10 -n ki-rh2 echo Hello World \; echo Goodbye Cruel World
+#
+# BUGS:
+#   - set load = `echo $stat | cut -d"," -f 5` is not a good way of measuring
+#     load: uptime output is quite variable
+#
+# REVISION HISTORY:
+#   2005-09-03  started Marshall (KIPAC)
+#-
+#===============================================================================
+
+# Options and arguments:
+
+set help = 0
+set vb = 0
+set file = $HOME/.slaves
+set name = 0
+set findslave = 1
+set persistence = 5
+set wait = 0
+set waittime = 0
+set command = ( nice +19 )
+
+# Need to treat everything after first non-option as part of the command:
+# only read options until a non-option is read.
+set treatasoption = 1
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -u:        #  get help
+      if ( $treatasoption ) then
+        shift argv
+        set help = 1
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case -h:        #  get help
+      if ( $treatasoption ) then
+        shift argv
+        set help = 1
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case --{help}:        #  get help
+      if ( $treatasoption ) then
+        shift argv
+        set help = 1
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case -v:        #  be verbose
+      if ( $treatasoption ) then
+        shift argv
+        set vb = 1
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case --{verbose}:        #  be verbose
+      if ( $treatasoption ) then
+        shift argv
+        set vb = 1
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case -f:        #  file with slave names
+      if ( $treatasoption ) then
+        shift argv
+        set file = $argv[1]
+        shift argv
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case --{file}:        #  file with slave names
+      if ( $treatasoption ) then
+        shift argv
+        set file = $argv[1]
+        shift argv
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case -n:        #  Specific slave name
+      if ( $treatasoption ) then
+        shift argv
+        set name = $argv[1]
+        set findslave = 0
+        shift argv
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case --{name}:        #  Specific slave name
+      if ( $treatasoption ) then
+        shift argv
+        set name = $argv[1]
+        set findslave = 0
+        shift argv
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case -p:        #  Time for window to persist after execution
+      if ( $treatasoption ) then
+        shift argv
+        set persistence = $argv[1]
+        shift argv
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case --{persist}:        #  Time for window to persist after execution
+      if ( $treatasoption ) then
+        shift argv
+        set persistence = $argv[1]
+        shift argv
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case -w:        #  Time to wait for a machine to come up
+      if ( $treatasoption ) then
+        shift argv
+        set wait = 1
+        set waittime = $argv[1]
+        shift argv
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case --{wait}:        #  Time to wait for a machine to come up
+      if ( $treatasoption ) then
+        shift argv
+        set wait = 1
+        set waittime = $argv[1]
+        shift argv
+      else
+        set command = ( $command $argv[1] )
+        shift argv
+      endif
+      breaksw
+   case *:         #  command to execute
+      if ( $treatasoption ) then
+        set treatasoption = 0
+      endif  
+      set command = ( $command $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-------------------------------------------------------------------------------
+
+# Catch stupidities:
+
+USAGE:
+
+if ( $help == 1 ) then
+  echo "slave: usage:"
+  echo "         slave [-f file -n name] command"
+  echo "IMPORTANT: all option flags must precede command"
+  goto FINISH
+endif
+
+if ( ! -e $file ) then
+  echo "ERROR: slaves file $file does not exist, aborting"
+  goto FINISH
+endif  
+
+#-------------------------------------------------------------------------------
+
+if ( $findslave == 1 ) then
+
+FINDSLAVE:
+
+# Find a slave to drive:
+
+set slaves = `cat $file | cut -d":" -f 1`
+set masters = `cat $file | cut -d":" -f 2`
+set slavespeed = `cat $file | cut -d" " -f 5`
+set slavencpu = `cat $file | cut -d" " -f 3 | cut -d":" -f 1`
+
+# If speed is unknown, need to run slavesworth to find it out:
+
+if ( $slaves[1] == $slavespeed[1] ) then
+  echo "Measuring slave machine clock speeds..."
+  slavesworth -f $file >& junk
+  \rm junk
+  set slavencpu = `cat $file | cut -d" " -f 3`
+  set slavespeed = `cat $file | cut -d" " -f 5`
+endif  
+
+touch .availableslaves ; \rm .availableslaves
+touch .slaveloads ; \rm .slaveloads
+
+echo "Measuring slave machine loads\c"
+set k = 0
+while ( $k < $#slaves )  
+
+  @ k ++
+  set name = $slaves[$k]
+  if ($vb) echo "\n  Machine name = $name"
+
+# Need inverse speed for sorting purposes...
+  set ncpu = $slavencpu[$k]
+  if ( $ncpu == 0 ) then
+    if ($vb) echo "  No processors found, skipping..."
+    goto NEXTSLAVE
+  endif
+  if ($vb) echo "          ncpu = $ncpu"
+
+  set speed = $slavespeed[$k]
+  if ($vb) echo "         speed = $speed"
+  set slowness = 0`echo "scale = 3; 1.0 / $speed" | bc`
+  if ($vb) echo "      slowness = $slowness"
+
+  if (${HOST} == $slaves[$k]) then
+    set stat = `uptime`
+  else
+    set stat = `ssh -q $name uptime`
+  endif
+  echo $name': '$stat >> .slaveloads
+  
+  if ($vb) echo "  uptime = $stat"
+  if ( $#stat > 1 ) then
+
+#   Measure average load in last 5 minutes:
+    @ j = $#stat - 1
+    set load = `echo $stat[$j] | sed s/,//g`
+    if ($vb) echo "          load = $load"
+    set effload = `echo "scale = 1; $load / $ncpu" | bc`
+    set first = `echo $effload | cut -c 1`
+    if ( $first == '.' ) then
+      set effload = 0$effload
+    endif
+#     set effload = $load
+    if ( $effload == '0' ) then
+      set effload = '0.0'
+    endif
+    if ($vb) echo "effective load = $effload"
+
+#   Give preference to local machine,
+    if ( $name == $HOST ) then
+
+      set loggedin = '0'
+
+    else
+
+#   Or find out who is using the machine and defer to the slave's master, and
+#   current interactive session holder (if they are busy using th emachine):
+
+      set loggedin = '0'
+
+      set drivers = `drivers -n $name -b`
+      foreach chap ( $drivers )
+        if ( $chap == $masters[$k] ) then
+          set loggedin = '1'
+        endif
+      end
+
+      set drivers = `drivers -n $name -b -i`
+      if ( $#drivers > 0 ) then
+        set loggedin = '1'
+      endif
+
+    endif
+
+    if ($vb) echo "  no. of users = $loggedin"
+    echo "${loggedin}"'    '"${effload}"'    '"${slowness}"'    '"${name}" >> .availableslaves
+
+    if ( ! $vb ) then
+      echo ".\c"
+    endif
+
+  endif
+
+NEXTSLAVE:
+
+end
+
+if ( $vb ) then
+  cat .availableslaves
+else
+  echo " "
+endif
+
+# Machine selection algorithm: only use machines with no user interactive 
+# session (except your own) unless the user has not been at the computer for a
+# day or more, do not use the master's machine if the master has used the slave in
+# the last day: with th e remaining available slaves, use them in order of 
+# loading, then speed.
+# Do not overload machines - if load >= 1 ignore.
+
+sort -n .availableslaves > .sortedavailableslaves
+mv .sortedavailableslaves .availableslaves
+
+set line = `head -1 .availableslaves | tail -1`
+
+set loggedin = $line[1] 
+if ( $loggedin == 0 ) then
+
+  set load = `echo "scale = 0; 10 * $line[2] / 1" | bc -l` 
+  if ( $load < 5 ) then
+    set name = $line[4]
+#   \rm .availableslaves 
+    goto DRIVE
+  else 
+    echo "All machines are loaded:"
+    cat .availableslaves
+#   \rm .availableslaves 
+    if ( $wait ) then
+      echo "Waiting for $waittime seconds before trying again..."
+      sleep $waittime
+      goto FINDSLAVE
+    else
+      echo "Command not executed."
+      goto FINISH
+    endif  
+  endif  
+endif  
+
+
+endif
+
+#-------------------------------------------------------------------------------
+
+# Drive the named slave:
+
+DRIVE:
+
+echo 'Executing "'$command'" on '$name
+if ( $findslave == 1 ) then
+  echo 'Initial loading: '
+  grep $name .slaveloads
+endif
+
+# First check if we are already on a slave - no need to ssh if so!  
+if (${HOST} == $name) then
+  xterm -geometry 120x5  -e "echo Connecting to $name ; $command ; sleep $persistence" &
+else
+  xterm -geometry 120x5  -e "echo Connecting to $name ; ssh -q $name $command ; sleep $persistence" &
+endif
+  
+
+#-------------------------------------------------------------------------------
+
+FINISH:
+
+#===============================================================================
+

@@ -1,0 +1,134 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   date2mjd
+#
+# PURPOSE:
+#   Return modified Julian date given input datestring.
+#
+# COMMENTS:
+#
+# USAGE:
+#       date2mjd [datestring]
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#   datestring [def=now]
+#   -h --help
+#
+# OUTPUTS:
+#   stdout
+#
+# EXAMPLES:
+#
+#   date2mjd
+#   date2mjd -d Thu Sep  4 09:48:25 PDT 2008
+#
+# DEPENDENCIES:
+#   scriptutils/src/date2mjd.c  author Rykoff (UCSB)
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2008-09-03  started Marshall (UCSB)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+set datestring = ()
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case *:            #  list of files to be onelinered
+      set datestring = ( $datestring $argv[1] )
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# Default to current date and time!
+
+if ($#datestring == 0) set datestring = ( `date` )
+
+# Reformat datestring and pass to date2mjd.exe:
+
+# Allowed output formats for reference:
+# %%     a literal %
+# %a     locale?s abbreviated weekday name (Sun..Sat)
+# %A     locale?s full weekday name, variable length (Sunday..Saturday)
+# %b     locale?s abbreviated month name (Jan..Dec)
+# %B     locale?s full month name, variable length (January..December)
+# %c     locale?s date and time (Sat Nov 04 12:02:33 EST 1989)
+# %C     century (year divided by  100  and  truncated  to  an  integer)[00-99]
+# %d     day of month (01..31)
+# %D     date (mm/dd/yy)
+# %e     day of month, blank padded ( 1..31)
+# %F     same as %Y-%m-%d
+# %g     the 2-digit year corresponding to the %V week number
+# %G     the 4-digit year corresponding to the %V week number
+# %h     same as %b
+# %H     hour (00..23)
+# %I     hour (01..12)
+# %j     day of year (001..366)
+# %k     hour ( 0..23)
+# %l     hour ( 1..12)
+# %m     month (01..12)
+# %M     minute (00..59)
+# %n     a newline
+# %N     nanoseconds (000000000..999999999)
+# %p     locale?s upper case AM or PM indicator (blank in many locales)
+# %P     locale?s lower case am or pm indicator (blank in many locales)
+# %r     time, 12-hour (hh:mm:ss [AP]M)
+# %R     time, 24-hour (hh:mm)
+# %s     seconds since ?00:00:00 1970-01-01 UTC? (a GNU extension)
+# %S     second (00..60); the 60 is necessary to accommodate a leap second
+# %t     a horizontal tab
+# %T     time, 24-hour (hh:mm:ss)       
+# %u     day of week (1..7);  1 represents Monday
+# %U     week number of year with Sunday as first day of week (00..53)
+# %V     week number of year with Monday as first day of week (01..53)
+# %w     day of week (0..6);  0 represents Sunday
+# %W     week number of year with Monday as first day of week (00..53)
+# %x     locale?s date representation (mm/dd/yy)
+# %X     locale?s time representation (%H:%M:%S)
+# %y     last two digits of year (00..99)
+# %Y     year (1970...)
+# %z     RFC-2822 style numeric timezone (-0500) (a  nonstandard  extension)
+# %Z     time  zone  (e.g.,  EDT),  or nothing if no time zone is determinable
+
+set x = `date -d "$datestring" +'%Y %m %e %k %M %S'`
+
+# Remove leading zeroes from month, minute and second:
+foreach i ( 2 5 6 )
+  set y = `seq $x[$i] $x[$i]`
+  set x[$i] = $y
+end  
+
+date2mjd.exe -y $x[1] -m $x[2] -d $x[3] -h $x[4] -i $x[5] -s $x[6]
+
+FINISH:
+
+#=======================================================================
