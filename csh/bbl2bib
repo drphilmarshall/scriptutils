@@ -128,7 +128,7 @@ foreach input ( $inputs )
 # % \bibitem[Rockosi (2002)]{rockosi2002} Rockosi, C.~M. et al. 2002, \aj, 124, 349
 # % \bibitem[Yanny et al. (2003)]{yanny2003} Yanny, B. et al. 2003, \apj,
 
-  grep '\\bibitem'  milkyway.tex |\
+  grep '\\bibitem'  $input |\
     sed s/'\\bibitem'/\\nXXXXX/g | grep XXXXX | sed s/XXXXX//g |\
     cut -d'}' -f1 | grep '(' > $tmp
 
@@ -136,7 +136,7 @@ foreach input ( $inputs )
   echo "bbl2bib: ...found $n entries"
   
   cat $tmp | cut -d'[' -f2 | cut -d']' -f1 | \
-    sed s/' et '/' '/g | sed s/' al. '/' '/g | sed s/'\\&'//g | \
+    sed s/' et '/' '/g | sed s/' al.'/' '/g | sed s/'\\&'//g | \
     sed s/'{'/''/g | sed s/'}'/''/g | cut -d'(' -f1 >> $authorlist
 
   cat $tmp | cut -d'(' -f2 | cut -d')' -f1 | \
@@ -151,13 +151,16 @@ set n1 = `cat $authorlist | wc -l`
 set n2 = `cat $yearlist | wc -l`
 set n3 = `cat $keylist | wc -l`
 
+echo "bbl2bib: found the following authors, years and keys:" 
+paste $authorlist $yearlist $keylist
+
 if ($n1 == $n2 && $n2 == $n3) then
   echo "bbl2bib: total of $n1 bibliographic entries found"
+  echo "bbl2bib: if this is less than you had hoped for, try reformatting" 
+  echo "bbl2bib: the input .bbl file to make the keys easier..." 
 else
   echo "bbl2bib: ERROR: authors, years, and keys do not match." 
-  echo "bbl2bib:        Edit the input file(s) until this problem disappears," 
-  echo "bbl2bib:        Here are the derived authors, years and keys:" 
-  paste $authorlist $yearlist $keylist
+  echo "bbl2bib: ERROR: edit the input file(s) until this problem disappears!" 
   goto FINISH
 endif
 
@@ -194,7 +197,7 @@ while ($i < $n1)
     echo "bbl2bib: WARNING: 0 articles found with scrapeADS $options"
   else  
 
-    mv $thisbibfile $key.bib
+  mv $thisbibfile $key.bib
   
 # Change the keys...
     set oldkeys = `cat $key.bib | grep ARTICLE | cut -d'{' -f 2 | cut -d',' -f1`
