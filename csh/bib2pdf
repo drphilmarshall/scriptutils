@@ -154,12 +154,10 @@ FILENAME:
   if ($#pdfurl == 0) then
   # PDF does not exist - go get eprint instead
     set arxiv = `grep "arXiv e-print<" htmlfile | head -1 | \
-                      cut -d':' -f3 | cut -d'/' -f1`
-    set index = `grep "arXiv e-print<" htmlfile | head -1 | \
                       cut -d':' -f3 | cut -d'/' -f2 | cut -d')' -f1`
-    if ($#index > 0) then
+    if ($#arxiv > 0) then
       set ejurl = ""
-      set pdfurl = "http://arxiv.org/pdf/${arxiv}/${index}"
+      set pdfurl = "http://arxiv.org/pdf/${arxiv}.pdf"
     else   
     # eprint does not exist - just print electronic link instead:
       set ejurl = `grep "Electronic Refereed Journal Article" htmlfile | head -1 | \
@@ -168,6 +166,7 @@ FILENAME:
   else
     set arxiv = 0   
   endif
+    
 # Correct special characters in PDFurl:  
   set pdfurl = `echo "$pdfurl" | sed s/\\\&\\\#38\\\;/\\\&/g`
   
@@ -194,7 +193,7 @@ FILENAME:
   echo "bib2pdf: downloading, log stored in $logfile"
   
   if ($arxiv == 0) then
-    wget -e robots=off --timestamping --continue "$pdfurl" -o $logfile -O "$pdffile"
+    wget -e robots=off --continue "$pdfurl" -o $logfile -O "$pdffile"
   else
 # 2007-05-21 (Monday) 19:29 PDT
 # wget does not work on arxiv! 
@@ -203,6 +202,12 @@ FILENAME:
 
 # Check that it worked:
 
+  set MNRAS = `grep 'http://mnras' $pdffile |& grep pdf | wc -l`
+  if ($MNRAS) then
+    set pdfurl = `grep 'http://mnras' $pdffile |& grep pdf | cut -d'"' -f2`
+    curl -o "$pdffile" "$pdfurl" >& $logfile
+  endif
+  
   set fail = `grep ERROR $logfile | head -1 | wc -l`
   if ($fail == 0) then
     set fail = `\ls "$pdffile" |& grep 'No such file or directory' | wc -l`
