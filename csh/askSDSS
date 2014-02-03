@@ -55,6 +55,7 @@
 #   - Vega R band selection is very approximate, esp at cvs catalogue stage
 #   - No message printed to screen if image generation fails because target
 #     is outside SDSS area.
+#   - Since moving to DR10, object catalogs no longer work :-/
 #  
 # REVISION HISTORY:
 #   2006-06-12  started Marshall (KIPAC)
