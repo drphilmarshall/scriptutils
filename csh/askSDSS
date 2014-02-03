@@ -253,7 +253,8 @@ end
 SETUP:
 
 if ( $help || $narg < 2 ) then
-  print_script_header.csh $0
+  # print_script_header.csh $0
+  more `which $0`
   goto FINISH
 endif
 
