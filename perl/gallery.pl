@@ -104,6 +104,7 @@ while (defined($x = shift)){
 }
 ($nfiles == 0) and die "ERROR: No files supplied.\n\n$usage\n";
 # ($nfiles > ($m*$n)) and die "ERROR: too many files.\n\n$usage\n";
+($verb>0) and print STDOUT "\nNo. of files supplied = $nfiles\n";
 
 # Guess number of pages:
 $npages = $nfiles/($m*$n);
