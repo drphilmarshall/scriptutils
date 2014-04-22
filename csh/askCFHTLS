@@ -1,0 +1,931 @@
+#!/bin/tcsh
+#=======================================================================
+#+
+# NAME:
+#   askCFHTLS
+#
+# PURPOSE:
+#   Query CFHTLS website for finding charts, object information, data etc.
+#
+# COMMENTS:
+#
+# USAGE:
+#       askCFHTLS [-f -i -c -s -h -x][-r radius -m maglimit] ra dec
+#
+# INPUTS:
+#   ra dec                 position of object in degrees
+#
+# OPTIONAL INPUTS:
+#   -i --images            return FITS images (typically ugriz)
+#   -j --jpg               return jpg image, no annotation
+#   -f --finding-chart     return finding chart (jpg)
+#   -c --catalog           return object catalog (reformatted text)
+#   -s --star-list         return observing file (Keck AO style)
+#   -w --field-size     w  field size / arcmin
+#   -r --search-radius  r  search radius for stars / arcsec
+#   -V --use-V-mag         Use Vega V band mag for star list, not R
+#   -m --mag-limit      m  magnitude limit (R-band Vega, unless -V)
+#   --invert               invert colour scale of image
+#   --hms                  coords supplied in hms dms not degrees
+#   -x --clobber           overwrite current versions
+#   -n --name              provide parsable IAU-style name instead of ra/dec
+#   -h --help
+#   --dry-run              Do everything except the downloads
+#
+# OUTPUTS:
+#   CFHTLShhmmss.pp+ddmmss.s_13x10arcmin_?.fits
+#   CFHTLShhmmss.pp+ddmmss.s_rxrarcmin.jpg
+#   CFHTLShhmmss.pp+ddmmss.s_rxrarcmin_R.gt.m.cat
+#
+# EXAMPLES:
+#
+#   NGC5485:
+#
+#     askCFHTLS --finding-chart --field-size 5 --hms 14:07:11 +55:00:06
+#     askCFHTLS -f -w 5 211.79583 55.00167
+#     
+#     askCFHTLS --catalog --mag-limit 20 --field-size 60 --hms 14:07:11 +55:00:06
+#     askCFHTLS -c -m 20 -w 60 211.79583 55.00167
+# 
+#
+# DEPENDENCIES:
+#   
+#   skycoor, wget
+#
+# BUGS:
+#   - No message printed to screen if image generation fails because target
+#     is outside CFHTLS area.
+#  
+# REVISION HISTORY:
+#   2014-04-21  adapted from askSDSS Marshall (KIPAC)
+#-
+#=======================================================================
+
+# Options and arguments:
+
+set narg = $#argv
+
+# Set defaults:
+
+unset ra0
+unset dec0
+
+set usename = 0
+set name = 0
+
+set png = 0
+set finding = 0
+set catalog = 0
+set starlist = 0
+set images = 0
+
+set klobber = 0 
+
+set maglimit = 18
+set field = 3
+set invert = 0
+set hms = 0
+
+set maxsep = 60
+set useV = 0
+
+set help = 0
+set dryrun = 0
+
+#Escape shell defaults
+unset noclobber
+unalias rm
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case --{dry-run}:  
+      set dryrun = 1
+      shift argv
+      breaksw
+   case --{png}:   
+      shift argv
+      set png = 1
+      breaksw
+   case -f:        #  finding chart
+      shift argv
+      set finding = 1
+      set png = 1
+      breaksw
+   case --{finding-chart}:   
+      shift argv
+      set finding = 1
+      set png = 1
+      breaksw
+   case -c:        #  object catalog - reformatted text
+      shift argv
+      set catalog = 1
+      breaksw
+   case --{catalog}:       
+      shift argv
+      set catalog = 1
+      breaksw
+   case -s:        #  star list
+      shift argv
+      set starlist = 1
+      breaksw
+   case --{star-list}:       
+      shift argv
+      set starlist = 1
+      breaksw
+   case -i:        
+      shift argv
+      set images = 1
+      breaksw
+   case --{images}:        
+      shift argv
+      set images = 1
+      breaksw
+   case -w:        #  field size
+      shift argv
+      set field = $argv[1]
+      shift argv
+      breaksw
+   case --{field-size}:
+      shift argv
+      set field = $argv[1]
+      shift argv
+      breaksw
+   case -r:        #  search radius
+      shift argv
+      set maxsep = $argv[1]
+      shift argv
+      breaksw
+   case --{search-radius}:
+      shift argv
+      set maxsep = $argv[1]
+      shift argv
+      breaksw
+   case -m:        #  magnitude limit
+      shift argv
+      set maglimit = $argv[1]
+      shift argv
+      breaksw
+   case --{mag-limit}:
+      shift argv
+      set maglimit = $argv[1]
+      shift argv
+      breaksw
+   case -V:        #  Use Vega V mag for star selection?       
+      shift argv
+      set useV = 1
+      breaksw
+   case --{use-V-mag}:           
+      shift argv
+      set useV = 1
+      breaksw
+   case --{invert}: #  Invert colour scale?       
+      shift argv
+      set invert = 1
+      breaksw
+   case --{hms}:   #  Coords input in hms dms?       
+      shift argv
+      set hms = 1
+      breaksw
+   case -x:        #  Clobber?
+      shift argv
+      set klobber = 1
+      breaksw
+   case --{clobber}:        
+      shift argv
+      set klobber = 1
+      breaksw
+   case -n:  # Input is name, not ra/dec!      
+      shift argv
+      set usename = 1
+      set name = $argv[1]
+      shift argv
+      set ra0 = -99
+      set dec0 = -99
+      breaksw
+   case --{name}:  
+      shift argv
+      set usename = 1
+      set name = $argv[1]
+      shift argv
+      set ra0 = -99
+      set dec0 = -99
+      breaksw
+   case *:         #  ra and dec!
+      if ($usename == 0) then
+        set ra0 = $argv[1]
+        shift argv
+        set dec0 = $argv[1]
+        shift argv
+      else
+        shift argv
+      endif  
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+SETUP:
+
+if ( $help || $narg < 2 ) then
+  # print_script_header.csh $0
+  more `which $0`
+  goto FINISH
+endif
+
+echo "askCFHTLS: query the CFHTLS website for images and catalogs"
+
+# Check for software availabity:
+
+set nowget = `which wget |& grep "not found" | wc -l`
+if ($nowget) then
+  echo "${0:t:r}: ERROR: no wget for submitting data to web"
+  goto FINISH
+endif
+set noskycoor =  `which skycoor |& grep "not found" | wc -l` 
+if ($noskycoor) then
+  echo "${0:t:r}: ERROR: no skycoor program for translating coordinates"
+  echo "${0:t:r}: You can download it from: \
+  http://tdc-www.harvard.edu/software/wcstools/skycoor.html"
+  goto FINISH
+endif
+set nohumvi = `which compose.py |& grep "not found" | wc -l`
+if ($nowget) then
+  echo "${0:t:r}: ERROR: no HumVI for making nice pngs"
+  goto FINISH
+endif
+
+
+# Parse inputs:
+
+if ( ! $?ra0 ) then
+  echo "askCFHTLS: no RA specified"
+  goto FINISH
+endif
+if ( ! $?dec0 ) then
+  echo "askCFHTLS: no dec specified"
+  goto FINISH
+endif
+
+set fielddeg = `echo "$field / 60.0" | bc -l`
+
+# Convert supplied name into rahms/dechms:
+if ($usename) then
+  echo "askCFHTLS: interpreting supplied name: $name"
+  set string = `echo $name | tr -d '[a-z,A-Z]'` 
+  set positive = `echo $string | grep '+' | wc -l`
+  if ($positive) then
+    set decsign = '+'
+  else  
+    set decsign = '-'
+  endif  
+  set x = `echo $string | sed s/'-'/' '/g | sed s/'+'/' '/g`
+  set nchars = `echo $x[1] | wc -c`
+  if ($nchars < 4) then
+    echo "ERROR: incomprehensible RA string: $x[1]"
+  else
+    set rah = `echo $x[1] | cut -c1-2`  
+    set ram = `echo $x[1] | cut -c3-4`  
+    set ras = `echo $x[1] | cut -c5-`
+    if ($#ras == 0) set ras = '00.00'  
+  endif
+  set ra0 = "${rah}:${ram}:${ras}"
+  set nchars = `echo $x[2] | wc -c`
+  if ($nchars < 4) then
+    echo "ERROR: incomprehensible Dec string: $x[2]"
+  else
+    set decd = `echo $x[2] | cut -c1-2`  
+    set decm = `echo $x[2] | cut -c3-4`  
+    set decs = `echo $x[2] | cut -c5-`  
+    if ($#decs == 0) set decs = '00.0'  
+  endif
+  set dec0 = "${decsign}${decd}:${decm}:${decs}"
+  set hms = 1
+endif  
+
+# Convert to degrees:
+unset rahms
+unset dechms
+if ($hms) then
+
+#   set rahms =  `echo "$ra0" | sed s/:/\ /g`
+#   set dechms = `echo "$dec0" | sed s/\:/\ /g`
+#   set positive = 1
+#   set test = `echo $dec0 | grep '-' | wc -l`
+#   if ($test) set positive = 0    
+#    
+#   set x = ( $rahms )
+#   foreach i ( `seq 3` )
+#     set a = `echo $x[$i] | cut -c 1` ; set b = `echo $x[$i] | cut -c 2` 
+#     if ($a == 0) set x[$i] = $b
+#   end
+#   set ra0 = `echo "15.0 * ($x[1] + $x[2]/60.0 + $x[3]/3600.0)" | bc -l | cut -c 1-11`
+#   set a = `echo $ra0 | cut -c 1` ; set b = `echo $ra0 | cut -c 2-`
+#   if ( $a == '.' ) set ra0 = "0.$b"
+# 
+#   set x = ( `echo $dechms | sed s/-//g | sed s/+//g` )
+#   foreach i ( `seq 3` )
+#     set a = `echo $x[$i] | cut -c 1` ; set b = `echo $x[$i] | cut -c 2` ; set c = `echo $x[$i] | cut -c 3` 
+#     if ($a == '-') then
+#       set x[$i] = $b$c
+#       set positive = 0
+#       if ($b == 0) set x[$i] = $c
+#     endif  
+#     if ($a == 0) set x[$i] = $b
+#   end
+#   set dec0 = `echo "$x[1] + $x[2]/60.0 + $x[3]/3600.0" | bc -l | cut -c 1-12`
+#   set a = `echo $dec0 | cut -c 1` ; set b = `echo $dec0 | cut -c 2-` 
+#   if ( $a == '.' ) set dec0 = 0.$b
+#   if ( ! $positive ) set dec0 = '-'$dec0
+
+  set rahms =  `echo "$ra0" | sed s/':'/' '/g`
+  set dechms = `echo "$dec0" | sed s/':'/' '/g`
+  set line = `skycoor -d $ra0 $dec0`
+  set ra0 = $line[1]
+  set dec0 = $line[2]
+  echo "askCFHTLS: required position: $ra0 $dec0"
+
+endif 
+
+if ($png)       echo "askCFHTLS: TODO: make PNG image"
+if ($finding)   echo "askCFHTLS: TODO: make finding chart"
+if ($images)    echo "askCFHTLS: TODO: download images"
+if ($starlist)  set catalog = 1
+if ($catalog)   echo "askCFHTLS: TODO: make object catalog"
+if ($starlist)  echo "askCFHTLS: TODO: make bright star list"
+
+@ act = $png + $finding + $images + $catalog
+if ($act == 0) echo "askCFHTLS: no actual tasks specified, just returning IAU name"
+
+if ($catalog || $starlist) then
+  if ($starlist) then
+    echo "askCFHTLS: catalog and starlist R-band Vega magnitude limit: $maglimit"
+  else
+    echo "askCFHTLS: catalog i-band AB magnitude limit: $maglimit"
+  endif  
+  set MAXfield = 60
+  set toobig = `echo "$field / ( $MAXfield - 0.001 )" | bc`
+  if ($toobig > 0) then
+    echo "askCFHTLS: WARNING: maximum field size for cataloguing is 12 arcmin"
+    set field = $MAXfield
+  endif
+endif
+echo "askCFHTLS: field size / arcmin: $field"
+
+if ($starlist) echo "askCFHTLS: search radius / arcsec: $maxsep"
+if ($klobber) echo "askCFHTLS: clobbering existing files"
+
+#-----------------------------------------------------------------------
+IAUNAME:
+
+if ( ! $?rahms ) then
+#   set rah = `echo "$ra0 / 15.0" | bc -l | cut -d'.' -f1`
+#   set test = `echo $rah | wc -c` ; if ($test == 1) set rah = 0
+#   set ram = `echo "($ra0 - $rah * 15.0)* 60.0 / 15.0" | bc -l | cut -d'.' -f1`
+#   set ras = `echo "scale = 2; ($ra0 - $rah * 15.0 - $ram * 15.0 / 60.0) * 3600.0 / 15.0" | bc -l | cut -c1-5`
+#   set test = `echo $rah | wc -c` ; if ($test == 2) set rah = 0$rah
+#   set test = `echo $ram | wc -c` ; if ($test == 2) set ram = 0$ram
+#   set test = `echo $ras | cut -d'.' -f1 | wc -c` ; if ($test == 2) set ras = 0$ras
+  set line = `skycoor $ra0 $dec0`
+  set rahms = `echo "$line[1]" | sed s/:/\ /g`
+endif 
+set rah = $rahms[1]
+set ram = $rahms[2] 
+set ras = `echo "$rahms[3]" | cut -c 1-5`
+
+if ( ! $?dechms ) then
+#   set positive = `echo "($dec0 / sqrt($dec0*$dec0) + 1.0)/2.0" | bc -l | cut -d'.' -f1`
+#   if ($positive) then
+#     set decsign = '+'
+#   else
+#     set decsign = '-'
+#   endif 
+#   set dec0 = `echo $dec0 | sed s/-//g`
+#   set decd = `echo "$dec0" | cut -d'.' -f1`
+#   set decm = `echo "($dec0 - $decd)* 60.0" | bc -l | cut -d'.' -f1`
+#   set decs = `echo "scale = 2; ($dec0 - $decd - $decm / 60.0) * 3600.0" | bc -l | cut -c1-4`
+#   set test = `echo $decd | wc -c` ; if ($test == 2) set decd = 0$decd
+#   set test = `echo $decm | wc -c` ; if ($test == 2) set decm = 0$decm
+#   set test = `echo $decs | cut -d'.' -f1 | wc -c` 
+#   if ($test == 2) then
+#     set decs = `echo "0$decs" | cut -c1-4`
+#   endif
+# # Don't forget to put sign back!
+#   set dec0 = `echo "0.0 $decsign $dec0" | bc -l`
+  set line = `skycoor $ra0 $dec0`
+  set dechms = `echo "$line[2]" | sed s/:/\ /g`
+endif
+set decd = $dechms[1]
+set decm = $dechms[2] 
+set decs = `echo "$dechms[3]" | cut -c 1-4`
+set decsign = ''
+ 
+if ($hms == '0') then
+  echo "askCFHTLS: ra (deg): $ra0"
+  echo "askCFHTLS: dec (deg): $dec0"
+endif
+
+echo "askCFHTLS: ra (J2000): $rah $ram $ras"
+echo "askCFHTLS: dec (J2000): $decd $decm $decs"
+
+set name = "CFHTLSJ$rah$ram$ras$decsign$decd$decm$decs"
+
+echo "askCFHTLS: IAU name of search position: $name"
+
+set fileroot = ${name}_${field}x${field}arcmin
+
+#-----------------------------------------------------------------------
+# IMAGES:
+# 
+# if ($images) then
+# 
+#   set imageroot = ${name}_13x10arcmin
+# 
+# # Need to query explore tool, and read the *frame* source to get the 
+# # FITS page id:
+# 
+#   set url = ""
+#   set url = "${url}http://cas.sdss.org/${DRX}/en/tools/explore/OETOC.asp?"
+#   set url = "${url}ra=${ra0}&"
+#   set url = "${url}dec=${dec0}"
+# 
+#   set htmlfile = ${imageroot}_explore.html
+#   set logfile = $htmlfile.log
+# 
+#   wget "$url" -O $htmlfile -o $logfile
+# 
+# # Now, read this html and find out where the FITS files are:
+# 
+# #   set string = `grep 'fitsimg.asp' $htmlfile | cut -d'"' -f8`
+# #   set url = "http://cas.sdss.org/${DRX}/en/tools/explore/${string}"
+#   set url = `grep 'the FITS file(s)' $htmlfile | cut -d'"' -f8`
+# 
+#   set htmlfile = ${imageroot}_fitsasp.html
+#   set logfile = $htmlfile.log
+# 
+#   wget "$url" -O $htmlfile -o $logfile
+# 
+# # OK, now have piece of html with FITS image addresses!
+# 
+#   set htmlsnippet = ${imageroot}_fitsasp.snippet.html
+# #   set i = `grep -n 'Corrected Frames' $htmlfile | cut -d':' -f1`
+# #   tail -n +$i $htmlfile | head -6 > $htmlsnippet
+#   grep 'dynamically generated' $htmlfile > $htmlsnippet
+#   
+#   set urls = `grep 'http' $htmlsnippet | cut -d'"' -f2`
+# #   set filters = `grep 'http' $htmlsnippet | cut -d'>' -f3 | cut -d'<' -f1` 
+#   set filters = `grep 'http' $htmlsnippet | cut -d'"' -f2 | cut -d'=' -f6` 
+# 
+#   echo "askCFHTLS: found $#filters FITS images:"
+#   echo "  filter   url"
+#   foreach i ( `seq $#filters` )
+#     echo "    $filters[$i]      $urls[$i]"
+#   end    
+# 
+# # Download FITS images - standard 10x13arcmin frames, 0.396" pixels:
+# 
+#   foreach i ( `seq $#filters` )
+# 
+#     set filter = $filters[$i]
+#     set url = "$urls[$i]"
+# 
+#     set fitsfile = ${imageroot}_${filter}_sci.fits
+# #     set gzfitsfile = $fitsfile.gz
+#     set logfile = ${fitsfile:r}_wget.log
+# 
+#     if ($klobber) then
+#       echo "askCFHTLS: clobbering old ${filter}-band FITS image"
+# #       \rm -f $fitsfile $gzfitsfile
+#       \rm -f $fitsfile
+#     endif
+# 
+#     if ( ! -e $fitsfile ) then
+# 
+# # Construct url and wget:
+# 
+# #       echo "askCFHTLS: downloading and gunzipping ${filter}-band FITS image..."
+#       echo "askCFHTLS: downloading ${filter}-band FITS image..."
+# #       wget "$url" -O $gzfitsfile -o $logfile
+#       wget "$url" -O $fitsfile -o $logfile
+# #       gunzip $gzfitsfile
+# 
+#     else
+#       echo "askCFHTLS: no image download is necessary"
+#     endif
+# 
+#     if ( ! -e $fitsfile ) then
+#       echo "askCFHTLS: ${filter}-band FITS image download failed"
+#       echo "askCFHTLS: read wget log:"
+#       echo "  $logfile"
+#       echo "askCFHTLS: check url:"
+#       echo "  $url"
+#       goto FINISH
+#     else 
+#       echo "askCFHTLS: ${filter}-band FITS image:"
+#       echo "  $fitsfile"
+#       \rm -f $logfile
+#     endif  
+# 
+#   end
+# 
+# # Clean up 
+#   touch junk.html junk.html.log ; \rm -f  *.html *.html.log
+# 
+# endif
+# 
+#-----------------------------------------------------------------------
+FINDINGCHART:
+
+
+if ($png) then
+
+    # Download cutout image:
+
+    set logfile = .${fileroot}_image_download.log
+    \rm -f $logfile
+
+    # Need to specify size of image. 1 arcmin = 210 pixels
+
+    set Npix = `echo "$field * 210.0" | bc -l`
+
+    # Construct url and wget html:
+
+    echo "askCFHTLS: querying image store..."
+    set url = "http://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/"
+    set url = "${url}community/CFHTLens/cgi/mcut.pl?single=yes&"
+    set url = "${url}ra=${ra0}&dec=${dec0}&object=&size=${Npix}"
+
+    if ($dryrun) then
+        echo "askCFHTLS: Dry run! Image query URL: $url"
+    else
+        wget "$url" -O htmlfile -o $logfile
+    endif
+
+    # Now interpret html to grab FITS images and make PNG.
+    # Identify chunks of html to loop over:
+
+    set startingpoints = `grep -n 'resolves to' htmlfile | cut -d':' -f1`
+    echo "askCFHTLS: $#startingpoints images to be made"
+
+    set k = 0
+    while ( $k < $#startingpoints )
+
+        # Get chunk of html:
+        @ k = $k + 1
+        set i = $startingpoints[$k]
+        if ($k == $#startingpoints ) then
+            set j = `cat htmlfile | wc -l`
+        else
+            @ kk = $k + 1
+            set j = $startingpoints[$kk]
+        endif
+        @ length = $j - $i
+        tail -n +$i htmlfile | head -n $length > chunk
+
+        # Pull out resolved RA and DEC:
+        set IAUname = `head -1 chunk | cut -d"'" -f5 | \
+                       awk '{print $5}' | \
+                       sed s%'</b><br>'%%g | \
+                       sed s%'</b><BR>'%%g | \
+                       sed s%':'%%g | \
+                       sed s%','%' '%g | \
+                       awk '{if ($2 < 0) printf "CFHTLS%s%s\n", $1,$2 ; else printf "CFHTLS%s+%s\n", $1,$2}'`
+        echo "askCFHTLS: object IAUname: $IAUname"
+
+        # Get sci images:
+        set urls = `grep href chunk | grep -e '-image' | cut -d"'" -f2`
+        set filters = `grep href chunk | grep -e '-image' | cut -d"'" -f3 | cut -c 2`
+        echo "askCFHTLS: $#filters filters are available: $filters"
+
+        # Figure out channels:
+        set got = `echo $filters | grep 'i' | wc -l`
+        if ($got) then
+            set RED = 'i'
+        else
+            set got2 = `echo $filters | grep 'z' | wc -l`
+            if ($got2) then
+              set RED = 'z'
+            else
+              echo "askCFHTLS: ERROR: no i or z band image! Exiting."
+              goto FINISH
+            endif
+        endif
+        set got = `echo $filters | grep 'r' | wc -l`
+        if ($got) then
+            set GREEN = 'r'
+        else
+            echo "askCFHTLS: ERROR: no r band image! Exiting."
+        endif
+        set got = `echo $filters | grep 'g' | wc -l`
+        if ($got) then
+            set BLUE = 'g'
+        else
+            echo "askCFHTLS: ERROR: no g band image! Exiting."
+        endif
+        set channels = "$BLUE$GREEN$RED"
+
+        set pngfile = "${IAUname}_$channels.png"
+
+        # Get FITS images:
+        set images = ()
+        foreach channel ( $RED $GREEN $BLUE )
+
+            # Figure out correct url:
+            foreach i ( `seq $#filters` )
+              if ($filters[$i] == $channel) set index = $i
+            end
+            set url = "$urls[$index]"
+
+            # Download:
+            set fitsfile = "${IAUname}_${channel}_sci.fits"
+
+            if (! -e $fitsfile && ! -z $fitsfile) then
+              wget -O $fitsfile "$url" >& /dev/null
+              echo -n "askCFHTLS: $channel-band FITS image saved to "
+            else
+              echo -n "askCFHTLS: $channel-band FITS image already exists "
+            endif
+            du -h $fitsfile
+
+            set images = ( $images $fitsfile )
+
+        end  
+
+        # Finally, compose PNG:
+        
+        echo "askCFHTLS: Making HumVI composite image..."
+        compose.py -v -s 0.4,0.6,1.7 -z 0.0 -p 1.7,0.09 -m -1.0 \
+           -o $pngfile  $images > $pngfile:r.log
+
+        # Report:
+        echo "askCFHTLS: PNG image saved to $pngfile"
+        set png = 2
+
+    end
+ 
+        
+    if ( $png == 1 && $dryrun == 0 ) then
+      echo "askCFHTLS: finding chart images download failed"
+      echo "askCFHTLS: read wget log:"
+      echo "  $logfile"
+      echo "askCFHTLS: check url:"
+      echo "  $url"
+      goto FINISH
+    else 
+      echo "askCFHTLS: finding chart image:"
+      echo "  $pngfile"
+    endif  
+
+
+    # Clean up 
+    if ( -e $logfile ) then
+        \rm $logfile htmlfile chunk
+    endif
+
+endif
+
+#-----------------------------------------------------------------------
+CATALOG:
+    
+if ($starlist) then
+  if ($useV) then
+    set rlimit = `echo "$maglimit + 0.3" | bc`
+    set catfile = ${fileroot}_V.lt.${maglimit}.txt
+  else
+    set rlimit = `echo "$maglimit + 0.3" | bc`
+    set catfile = ${fileroot}_R.lt.${maglimit}.txt
+  endif  
+else
+  set rlimit = $maglimit
+  set catfile = ${fileroot}_i.lt.${rlimit}.txt
+endif
+
+
+if ($catalog != 0) then
+
+# Download catalog:
+
+  set logfile = ${catfile:r}_wget.log
+
+  if ($klobber) then
+    echo "askCFHTLS: clobbering old object catalog"
+    \rm -f $catfile
+  endif
+  
+  if ( ! -e $catfile ) then
+
+# Construct url and wget:
+
+    echo "askCFHTLS: downloading objects html file..."
+    set url = ""
+    set url = "${url}http://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/community/CFHTLens/cgi/queryt.pl?"
+    set url = "${url}REQUEST=doQuery&LANG=ADQL&method=sync&format=ascii&query=SELECT%0D%0A"
+    set url = "${url}top+10000"
+    set url = "${url}%0D%0Aid%2C+ALPHA_J2000%2C+DELTA_J2000%2C+FLUX_RADIUS"
+    set url = "${url}%2C+CLASS_STAR%2C+fitclass%2C+Z_B%2C+Z_B_MIN%2C+Z_B_MAX%2C+T_B"
+    set url = "${url}%2C+star_flag%2C+MAG_u%2C+MAG_g%2C+MAG_r%2C+MAG_i%2C+MAG_y%2C+MAG_z%0D%0A"
+    set url = "${url}FROM%0D%0Acfht.clens%0D%0AWHERE%0D%0A"
+    set url = "${url}contains%28pos%2Ccircle%28%27ICRS+GEOCENTER%27%2C"
+    set url = "${url}${ra0}%2C${dec0}%2C"
+    set url = "${url}${fielddeg}"
+    set url = "${url}%29%29%3D1%0D%0AAND+fitclass%3D0%0D%0AAND+T_B%3E%3D0.0%0D%0A"
+    set url = "${url}AND+star_flag%3C%3D0.1%0D%0AAND+MAG_i%3E%3D0.0%0D%0A"
+    set url = "${url}AND+MAG_i%3C%3D${maglimit}"
+
+    wget "$url" -O $catfile -o ${logfile}
+    
+    echo "$url"
+
+  else
+    echo "askCFHTLS: no catalog download is necessary"
+    set url = 0
+  endif
+
+  if ( ! -e $catfile ) then
+    echo "askCFHTLS: object catalog download failed"
+    echo "askCFHTLS: read wget log:"
+    echo "  $logfile"
+    echo "askCFHTLS: check url:"
+    echo "  $url"
+    goto FINISH
+  else 
+    echo "askCFHTLS: object catalog:"
+    echo "  $catfile"
+  endif 
+   
+# Clean up 
+  if ( -e $logfile ) \rm $logfile
+
+# Flag failure to find objects:
+  set none = `grep found $catfile | wc -l`
+  if ($none) then
+    echo "askCFHTLS: no objects found"
+    if ("$url" != 0) then
+      echo "askCFHTLS: check url:"
+      echo "  $url"
+    endif  
+  endif
+
+endif
+
+#-----------------------------------------------------------------------
+STARLIST:
+
+if ($starlist) then
+
+# Strip out relevant information from catalog file, 
+# and calculate secondary quantities.
+    
+  if ($none) then
+    echo "askCFHTLS: no stars to be listed"
+    goto ENDGAME
+  endif
+  
+  if ($useV) then
+    set starfile = ${name}_sep.lt.${maxsep:r}arcsec_V.lt.${maglimit}_stars.txt
+  else
+    set starfile = ${name}_sep.lt.${maxsep:r}arcsec_R.lt.${maglimit}_stars.txt
+  endif  
+
+  if ($klobber) then
+    echo "askCFHTLS: clobbering old star list"
+    \rm -f $starfile
+  endif
+
+  if ( ! -e $starfile ) then
+  
+  # Go back to directory holding all the data:
+
+    set dir = ${catfile:r}_tmp
+    set pars = `head -1 $catfile | sed s/,/\ /g`
+
+  # Now construct list of objects, ordered by magnitude:
+  # Include CFHTLS z band mag
+
+    if ($useV) then
+      echo "askCFHTLS: selecting stars by Vega V-band magnitude"
+      set Rvega = `tail -n +2 $dir/Vvega.txt`
+    else
+      echo "askCFHTLS: selecting stars by Vega R-band magnitude"
+      set Rvega = `tail -n +2 $dir/Rvega.txt`
+    endif
+    set sep = `tail -n +2 $dir/sep.txt`
+    set type = `tail -n +2 $dir/type.txt`
+# Star/galaxy separation: 
+#  type 3 = galaxy
+#  type 6 = star    
+
+    echo "askCFHTLS: select if ( int(sep[k]) < $maxsep:r )"
+    echo "askCFHTLS:    and if ( int(R/Vvega[k]) < $maglimit:r )"
+    echo "askCFHTLS: then select if ( type[k] == 6 )"
+    echo "askCFHTLS:          or if ( int(sep[k]) == 0 )"
+
+    set z = `tail -n +2 $dir/z.txt`    
+    set colour = `tail -n +2 $dir/g-r.txt`
+    set ra = `tail -n +2 $dir/ra.txt   | awk '{printf "%.5f\n", $1}'`
+    set dec = `tail -n +2 $dir/dec.txt | awk '{printf "%.5f\n", $1}'`
+# Star list: dx and dy from star to object:
+    set dx = `tail -n +2 $dir/dx.txt | awk '{printf "%.2f\n", $1 * -1}'`
+    set dy = `tail -n +2 $dir/dy.txt | awk '{printf "%.2f\n", $1 * -1}'`
+
+# # Write file - simple table format:
+#     touch junk ; rm junk ; touch junk
+#     set k = 0
+#     while ( $k < $#ra)
+#       @ k ++
+#       if ( $sep[$k]:r < $maxsep:r && $Rvega[$k]:r < $maglimit:r ) then
+#         if ( $type[$k] == 6 || $sep[$k]:r == 0 ) then
+#           echo "$Rvega[$k]  $sep[$k]   $dx[$k]   $dy[$k]   $colour[$k]   $z[$k]   $ra[$k]   $dec[$k]" >> junk
+#         endif
+#       endif  
+#     end
+# 
+#     if ($useV) then
+#       echo "Vmag    sep   dx    dy    g-r     zmag       ra          dec" > $starfile
+#     else
+#       echo "Rmag    sep   dx    dy    g-r     zmag       ra          dec" > $starfile
+#     endif
+#     set nstars = `cat junk | wc -l`
+#     sort -n junk >> $starfile
+#     rm junk
+
+# Write file - Keck starlist format:
+    touch junk ; rm junk ; touch junk
+    set k = 0
+    while ( $k < $#ra)
+      @ k ++
+      if ( $sep[$k]:r < $maxsep:r && $Rvega[$k]:r < $maglimit:r ) then
+        if ( $type[$k] == 6 || $sep[$k]:r == 0 ) then
+          echo "$Rvega[$k]  $sep[$k]   $dx[$k]   $dy[$k]   $colour[$k]   $z[$k]   $ra[$k]   $dec[$k]" >> junk
+        endif
+      endif  
+    end
+    set nstars = `cat junk | wc -l`
+    sort -n junk > junk2
+    mv junk2 junk
+    
+    if ($nstars > 0) then
+
+  # Identify primary target and write first line:    
+      set sep = `awk '{print $2}' junk`
+      echo "sep = $sep"
+      set jj = `pickone.csh --index --first $sep`
+      echo "jj = $jj"
+
+      set x = `tail -n +$jj junk | head -1`
+      set coords = `skycoor $x[7] $x[8] | sed s/':'/' '/g | sed s/'J'/' '/g`
+      set name = "CFHTLSJ${coords[1]}${coords[2]}${coords[4]}${coords[5]}"
+      set comments = "lgs=1"
+      echo "$name  $coords.00  $comments" > $starfile
+
+  # Now loop through all other targets and write other lines:    
+      foreach j ( `seq $nstars` )
+        set x = `tail -n +$j junk | head -1`
+        set ttcoords = `skycoor $x[7] $x[8] | sed s/':'/' '/g | sed s/'J'/' '/g`
+        set ttname = "    TT${ttcoords[2]}${ttcoords[3]:r}${ttcoords[5]}${ttcoords[6]:r}"
+        if ($j == $jj) then
+          set ttcomments = "  rmag=$x[1] sep=0(self-guide) dx=0 dy=0 pa=99"
+        else
+          set ttcomments = "  rmag=$x[1] sep=$x[2] dx=$x[3] dy=$x[4] pa=99"
+        endif
+        echo "$ttname  $ttcoords.00  $ttcomments" >> $starfile
+      end
+      \rm -f junk
+      echo "askCFHTLS: made new star list:"
+    
+    else
+      echo "askCFHTLS: no starlist made."
+    endif
+    
+  # Clean up:
+    touch junk.html ; \rm -f *.html *.html.log junk*
+
+  else
+    echo "askCFHTLS: star list already exists:"
+    set nstars = `tail -n +2 $starfile | wc -l`
+  endif
+  
+  if ($nstars > 0) then
+    echo "  $starfile"
+    echo "askCFHTLS: no of stars detected: $nstars"
+  endif  
+  
+endif
+
+#-----------------------------------------------------------------------
+ENDGAME:
+
+echo "askCFHTLS: all done"
+
+FINISH:
+
+#=======================================================================
