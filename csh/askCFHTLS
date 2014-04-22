@@ -53,9 +53,40 @@
 #   skycoor, wget
 #
 # BUGS:
-#   - No message printed to screen if image generation fails because target
-#     is outside CFHTLS area.
+#   - 
 #  
+# NOTES:
+#
+#   - CFHTLens catalogs seem to have a bright cutoff around i = 19.2...
+#
+#   - CFHTLens catalog entries:
+#
+#   - FITCLASS: Object classification as returned by lensfit.
+#     Classification values are
+#      0: galaxy
+#      1: star
+#     -1: bad fit: no useable data 
+#     -2: bad fit: blended object
+#     -3: bad fit: miscellaneous reason
+#     -4: bad fit: chi-squared exceeds a critical value
+
+#   - T_B: BPZ spectral type. 1=CWW-Ell, 2=CWW-Sbc, 3=CWW-Scd, 4=CWW-Im,
+#     5=KIN-SB3, 6=KIN-SB2. Note that we use a recalibrated template set
+#     described in Capak et al. (2004) and that the templates are
+#     interpolated, hence fractional types occur.
+
+#   - star_flag: Stars and galaxies are separated using a combination of
+#     size, i/y-band magnitude and colour information. For i<21, all
+#     objects with size smaller than the PSF are classified as stars. For
+#     i>23, all objects are classified as galaxies. In the range 21<i<23,
+#     a star is defined as size<PSF and chi2_star<2.0*chi2_gal, where the
+#     chi2's are the best fit chi2's from the galaxy and star libraries
+#     given by LePhare. NOTE: star_flag is optimized for galaxy studies,
+#     to keep an almost 100% complete galaxy sample with low (but not
+#     vanishing) stellar contamination. CLASS_STAR usually gives a cleaner
+#     star sample, but can lead to serious incompleteness in a galaxy
+#     sample.
+
 # REVISION HISTORY:
 #   2014-04-21  adapted from askSDSS Marshall (KIPAC)
 #-
