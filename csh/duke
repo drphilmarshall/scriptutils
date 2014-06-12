@@ -1,0 +1,122 @@
+#!/bin/tcsh
+#=============================================================================
+#+
+# NAME:
+#   duke
+#
+# PURPOSE:
+#   Find all the directories bigger than 1Gb and list them, in 
+#   sensible order, so that we can decide what to do with them.
+#
+# COMMENTS:
+# 
+#
+# USAGE:
+#       duke [-t] file [-o outfile]
+#
+# INPUTS:
+#
+# OPTIONAL INPUTS:
+#   -h --help
+#
+# OUTPUTS:
+#   duke_{datestamp}.log
+#
+# EXAMPLES:
+#
+#   duke
+# 
+#
+# DEPENDENCIES:
+#
+#   du
+#
+# BUGS:
+#  
+# REVISION HISTORY:
+#   2014-06-11  started Marshall (KIPAC)
+#-
+#=======================================================================
+
+unset noclobber
+
+# Set defaults:
+
+set help = 0
+
+# Parse command line:
+
+while ( $#argv > 0 )
+   switch ($argv[1])
+   case -h:           #  print help
+      set help = 1
+      shift argv
+      breaksw
+   case --{help}:  
+      set help = 1
+      shift argv
+      breaksw
+   case *:
+      shift argv
+      breaksw
+   endsw
+end
+
+#-----------------------------------------------------------------------
+
+if ($help) then
+  print_script_header.csh $0
+  goto FINISH
+endif
+
+# Work in current directory and below.
+
+# Date stamp for output file:
+set now = `date '+%Y-%m-%d_%H-%M-%S'`
+set output = "duke_${now}.log"
+\rm -f $output ; touch $output
+
+set nGb = 1.0
+set threshold = `echo $nGb 1048576 | awk '{print $1*$2}'`
+
+# Get list of directories in the $cwd:
+
+echo "duke: finding all directories larger than $nGb GB in $cwd..."
+\ls -aR |& grep -v 'Permission denied' | grep ':' | \
+   sed s/':'//g | cut -d'/' -f2- > duke.folders
+
+# Now search through them for large ones:
+
+set nfolders = `cat duke.folders | wc -l`
+
+foreach k ( `seq $nfolders` )
+  
+  set folder = `tail -n +$k duke.folders | head -1`
+
+  set big = `du -sk "$folder" | awk '{if ($1 > '$threshold') print 1; else print 0}'`
+  
+  if ($big) then
+    # set levels = `echo $folder | sed s%'/'%' '%g`
+    # set indent = ""
+    # foreach level ( $levels )
+    #    set indent = "$indent  "
+    # end
+    # set string = "$indent"`du -sk $folder`
+    set string = `du -sk "$folder"`
+    echo "$string" >> $output
+  endif  
+
+end
+sort -rn $output | \
+ awk '{printf "%.3fGB  %s %s %s %s\n", $1/1048576,$2,$3,$4,$5}' > junk
+mv junk $output
+ 
+more $output
+
+echo "duke: output stored in $output"
+
+\rm duke.folders
+
+FINISH:
+
+#=======================================================================
