@@ -1,5 +1,5 @@
 #!/bin/tcsh
-#=============================================================================
+# =============================================================================
 #+
 # NAME:
 #   duke
@@ -82,8 +82,8 @@ set threshold = `echo $nGb 1048576 | awk '{print $1*$2}'`
 # Get list of directories in the $cwd:
 
 echo "duke: finding all directories larger than $nGb GB in $cwd..."
-\ls -aR |& grep -v 'Permission denied' | grep ':' | \
-   sed s/':'//g | cut -d'/' -f2- > duke.folders
+\ls -aR |& grep -v 'Permission denied' | grep -v 'No such file' | \
+   grep ':' | sed s/':'//g | cut -d'/' -f2- > duke.folders
 
 # Now search through them for large ones:
 
@@ -119,4 +119,4 @@ echo "duke: output stored in $output"
 
 FINISH:
 
-#=======================================================================
+# =======================================================================
