@@ -19,6 +19,7 @@
 #   -f name         First author
 #   -a name         Other author
 #   -y year         Publication year
+#   --years y1 y2   Start and end years
 #   --abstract      Abstract words
 #   -k key          ADS abstract key
 #
@@ -46,17 +47,17 @@
 #   scrapeADS: returning refereed papers only
 #   scrapeADS: querying ADS for articles by ^van den Bosch,  with co-authors de Zeeuw,  since records began
 #   scrapeADS: found 2 abstract(s)
-#   scrapeADS: .. 
-#   scrapeADS: bibliographic database written to vandenBosch-deZeeuw-allyears.bib #   > scrapeADS 
+#   scrapeADS: ..
+#   scrapeADS: bibliographic database written to vandenBosch-deZeeuw-allyears.bib #   > scrapeADS
 #
 #   > scrapeADS -k 2005ApJ...634.1190H
 #   scrapeADS: querying ADS for the article indexed as 2005ApJ...634.1190H
-#   scrapeADS: . 
+#   scrapeADS: .
 #   scrapeADS: bibliographic database written to 2005ApJ...634.1190H.bib
 #
 #   > scrapeADS -l howell_2008-11-10.library
 #   scrapeADS: querying ADS for the 9 articles indexed in howell_2008-11-10.library
-#   scrapeADS: ......... 
+#   scrapeADS: .........
 #   scrapeADS: bibliographic database written to howell_2008-11-10.bib
 #
 # BUGS:
@@ -85,6 +86,8 @@ set narg = $#argv
 
 unset first
 unset year
+unset startyear
+unset endyear
 set arxiv = 0
 set bibclass = ''
 set nauthors = 0
@@ -95,7 +98,7 @@ set abskeys = ( )
 set library = 0
 set logic = 'AND'
 set help = 0
-set nmax = 100
+set nmax = 1000
 
 
 unset noclobber
@@ -121,6 +124,14 @@ while ( $#argv > 0 )
       set year = $argv[1]
       shift argv
       breaksw
+   case --{years}:        #  start and endyear
+      set year = 'range'
+      shift argv
+      set startyear = $argv[1]
+      shift argv
+      set endyear = $argv[1]
+      shift argv
+      breaksw
    case -a:        #  author
       shift argv
       set author = ( $author "$argv[1]" )
@@ -131,7 +142,7 @@ while ( $#argv > 0 )
       shift argv
       set arxiv = 1
       breaksw
-   case --{preprints}:    
+   case --{preprints}:
       shift argv
       set arxiv = 1
       breaksw
@@ -139,9 +150,10 @@ while ( $#argv > 0 )
       shift argv
       set refereed = 1
       breaksw
-   case --{refereed}:        
+   case --{refereed}:
       shift argv
       set refereed = 1
+      set arxiv = 0
       breaksw
    case --{abstract}:        #  abstract words
       shift argv
@@ -168,7 +180,7 @@ while ( $#argv > 0 )
       set abskeys = $argv[1]
       shift argv
       breaksw
-   case --key:     
+   case --key:
       shift argv
       set abskeys = $argv[1]
       shift argv
@@ -178,7 +190,7 @@ while ( $#argv > 0 )
       set library = $argv[1]
       shift argv
       breaksw
-   case --library: 
+   case --library:
       shift argv
       set library = $argv[1]
       shift argv
@@ -209,7 +221,7 @@ if ($library != 0) then
   if ($#abskeys == 0) then
     echo "scrapeADS: ERROR: ADS key library file $library not found or empty"
     goto FINISH
-  endif  
+  endif
 endif
 
 if ($library != 0) then
@@ -248,8 +260,8 @@ endif
 
 if ( $#abstract > 0 ) then
   if ($logic != 'OR' && $logic != 'AND') then
-    set logic = 'AND' 
-  endif  
+    set logic = 'AND'
+  endif
   echo "scrapeADS: combining abstract keywords with logic type ${logic}"
 endif
 
@@ -286,15 +298,15 @@ endif
 # Search abstracts for "cosmic string lens" including arxiv:
 # http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&db_key=PRE&qform=AST&sim_query=YES&ned_query=YES&aut_logic=OR&obj_logic=OR&author=&object=&start_mon=&start_year=&end_mon=&end_year=&ttl_logic=OR&title=&txt_logic=OR&text=cosmic+string++lens&nr_to_return=100&start_nr=1&jou_pick=ALL&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&end_entry_day=&end_entry_mon=&end_entry_year=&min_score=&sort=SCORE&data_type=SHORT&aut_syn=YES&ttl_syn=YES&txt_syn=YES&aut_w
 #
-# Search for first author papers by Dan Holz about lensing: 
+# Search for first author papers by Dan Holz about lensing:
 # http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&db_key=PRE&qform=AST&sim_query=YES&ned_query=YES&aut_req=YES&aut_logic=OR&obj_logic=OR&author=Holz%2CD%5E%0D%0A&object=&start_mon=&start_year=&end_mon=&end_year=&ttl_logic=OR&title=&txt_req=YES&txt_logic=OR&text=lensing&nr_to_return=100&start_nr=1&jou_pick=ALL&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&end_entry_day=&end_entry_mon=&end_entry_year=&min_score=&sort=SCORE&data_type=SHORT&aut_syn=YES&
 # The same without *requiring* the author or the text words...
 # http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&db_key=PRE&qform=AST&sim_query=YES&ned_query=YES&aut_logic=OR&obj_logic=OR&author=Holz%2CD%5E%0D%0A&object=&start_mon=&start_year=&end_mon=&end_year=&ttl_logic=OR&title=&txt_logic=OR&text=lensing&nr_to_return=100&start_nr=1&jou_pick=ALL&ref_stems=&data_and=ALL&group_and=ALL&start_entry_day=&start_entry_mon=&start_entry_year=&end_entry_day=&end_entry_mon=&end_entry_year=&min_score=&sort=SCORE&data_type=SHORT&aut_syn=YES&ttl_syn=YES&txt_syn=YES&
 
 if ( $arxiv == 0 ) then
-  set string1 = "http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&sim_query=YES&aut_xct=NO&aut_req=YES&aut_logic=AND&obj_logic=OR&author="
+  set string1 = "http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&qform=AST&sim_query=YES&aut_xct=NO&aut_req=YES&aut_logic=AND&obj_logic=OR&author="
 else
-  set string1 = "http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&db_key=PRE&sim_query=YES&aut_xct=NO&aut_req=YES&aut_logic=AND&obj_logic=OR&author="
+  set string1 = "http://adsabs.harvard.edu/cgi-bin/nph-abs_connect?db_key=AST&db_key=PRE&qform=AST&arxiv_sel=astro-ph&sim_query=YES&aut_xct=NO&aut_req=YES&aut_logic=AND&obj_logic=OR&author="
 endif
 
 if ( "$first" == "" ) then
@@ -325,12 +337,18 @@ endif
 if ( $year == "" ) then
   set outfile = "${outfile}allyears.bib"
   set comment = "${comment} since records began"
+  set startyear = ""
+else if ( $year == "range" ) then
+    set outfile = "${outfile}${startyear}-${endyear}.bib"
+    set comment = "${comment} in period ${startyear}-${endyear}"
 else
   set outfile = "${outfile}${year}.bib"
   set comment = "${comment} in ${year}"
+  set startyear = "$year"
+  set endyear = "$year"
 endif
 
-set string4 = "&object=&start_mon=&start_year=${year}&end_mon=&end_year=${year}"
+set string4 = "&object=&start_mon=&start_year=${startyear}&end_mon=&end_year=${endyear}"
 
 set string5 = "&ttl_logic=${logic}&title=&txt_req=YES&txt_logic=${logic}&text="
 if ( $#abstract > 0 ) then
@@ -412,7 +430,7 @@ biburlsloop:
     echo "scrapeADS: ERROR: no valid abstract for key ${abskeys[$k]}, skipping"
     echo -n "scrapeADS: "
     goto NEXTABSKEY
-  endif  
+  endif
 
 # Construct bibtex key at this stage, if desired:
 
@@ -450,7 +468,7 @@ biburlsloop:
         goto cramloop
       endif
     rm text
-    
+
 #     echo "lines = $lines"
 
   # Now search lines for the authors' names:
@@ -472,22 +490,51 @@ biburlsloop:
      endif
     end
     set bibkey = $bibclass
-    if ( $nnames == 1 || $nnames > 3 ) then
-      set x = `echo "$names[1]" | sed s/\ //g | cut -c 1-3`
+
+    # Old scheme: Ano10,A+B10,ABC10,Ano++10
+    # if ( $nnames == 1 || $nnames > 3 ) then
+    #   set x = `echo "$names[1]" | sed s/\ //g | cut -c 1-3`
+    #   set bibkey = "${bibkey}$x"
+    # else if ( $nnames == 2 ) then
+    #   set x = `echo "$names[1]" | sed s/\ //g | cut -c 1`
+    #   set bibkey = "${bibkey}$x"
+    #   set x = `echo "$names[2]" | sed s/\ //g | cut -c 1`
+    #   set bibkey = "${bibkey}+$x"
+    # else if ( $nnames == 3 ) then
+    #   foreach i ( 1 2 3 )
+    #     set x = `echo "$names[$i]" | sed s/\ //g | cut -c 1`
+    #     set bibkey = "${bibkey}$x"
+    #   end
+    # endif
+    # if ( $nnames > 3 ) then
+    #   set bibkey = "${bibkey}++"
+    # endif
+    #
+    # GETYEAR:
+    #
+    # # Get year (overwritten) from bibtex page too (in case -y wasn't set):
+    # set line = `grep 'year =' htmlfile`
+    # set year = `echo "${line}" | cut -d "=" -f 2 | cut -d"," -f 1`
+    # set x = `echo $year | cut -b 3-4`
+    # set bibkey = "${bibkey}$x"
+
+    # New scheme: Another2010,Another+Brother2010,ABC2010,AnotherEtal2010
+    if ( $nnames == 1 || $nnames > 2 ) then
+      set x = `echo "$names[1]" | sed s/\ //g`
       set bibkey = "${bibkey}$x"
     else if ( $nnames == 2 ) then
-      set x = `echo "$names[1]" | sed s/\ //g | cut -c 1`
+      set x = `echo "$names[1]" | sed s/\ //g`
       set bibkey = "${bibkey}$x"
-      set x = `echo "$names[2]" | sed s/\ //g | cut -c 1`
+      set x = `echo "$names[2]" | sed s/\ //g`
       set bibkey = "${bibkey}+$x"
-    else if ( $nnames == 3 ) then
-      foreach i ( 1 2 3 )
-        set x = `echo "$names[$i]" | sed s/\ //g | cut -c 1`
-        set bibkey = "${bibkey}$x"
-      end
+    # else if ( $nnames == 3 ) then
+    #   foreach i ( 1 2 3 )
+    #     set x = `echo "$names[$i]" | sed s/\ //g | cut -c 1`
+    #     set bibkey = "${bibkey}$x"
+    #   end
     endif
-    if ( $nnames > 3 ) then
-      set bibkey = "${bibkey}++"
+    if ( $nnames > 2 ) then
+      set bibkey = "${bibkey}Etal"
     endif
 
     GETYEAR:
@@ -495,12 +542,12 @@ biburlsloop:
   # Get year (overwritten) from bibtex page too (in case -y wasn't set):
     set line = `grep 'year =' htmlfile`
     set year = `echo "${line}" | cut -d "=" -f 2 | cut -d"," -f 1`
-    set x = `echo $year | cut -b 3-4`
+    set x = `echo $year | cut -b 1-4`
     set bibkey = "${bibkey}$x"
-      
+
   else
 
-  # Default ADS bibkey:  
+  # Default ADS bibkey:
     set bibkey = $abskeys[$k]
 
   endif
@@ -519,7 +566,7 @@ biburlsloop:
   echo "@ARTICLE{${bibkey}," >> $outfile
   tail -n $nfoot htmlfile    >> $outfile
   echo -n "."
-  
+
   \rm -f htmlfile
 
 NEXTABSKEY:
@@ -528,7 +575,7 @@ NEXTABSKEY:
   endif
 
 # Done.
-echo " " 
+echo " "
 echo "scrapeADS: bibliographic database written to $outfile"
 
 FINISH:
