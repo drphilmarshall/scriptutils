@@ -66,6 +66,7 @@ set input = 0
 set obslambda = 0
 set abs = 0
 set sn = 0
+set all = 0
 
 while ( $#argv > 0 )
    switch ($argv[1])
@@ -93,12 +94,12 @@ while ( $#argv > 0 )
       set short = 1
       shift argv
       breaksw
-   case -b:        
+   case --breaks:        
       set breaks = 1
       shift argv
       breaksw
    case -a:        
-      set abs = 1
+      set all = 1
       shift argv
       breaksw
    case --{absorption}:
@@ -195,8 +196,9 @@ foreach k ( `seq $n` )
   set lambda0[$k] = $table[$i]
 end  
 
-
-if ($short) then
+if ($all) then
+  set index = ( `seq $n` )
+else if ($short) then
   set index = ( 5 9 15 )
 else if ($abs) then
   set index = ( 21 22 23 24 25 )
