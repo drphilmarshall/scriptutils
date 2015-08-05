@@ -19,7 +19,7 @@
 #  --double  dt       Provide doubling time of exponential model
 #                       [def is to estimate it from data]
 #  --ref-date string  Plot this date as a vertical reference line.
-#                       [format of string must be MM/YYYY]  
+#                       [format of string must be MM/YYYY]
 #
 # OUTPUTS:
 #   stdout
@@ -28,7 +28,7 @@
 #   Phil:
 #     plot-publication-rate.csh body_publications.tex --ref-date 10/2006 --phd
 #   Tommaso:
-#     plot-publication-rate.csh --name "Treu,T" --double 1.7 --ref-date01/2004
+#     plot-publication-rate.csh --name "Treu,T" --double 1.7 --ref-date 01/2004
 #
 # BUGS:
 #
@@ -109,13 +109,13 @@ if ($name != 0) then
   set database = "${name}-allyears.bib"
   if (! -e $database) then
     echo "Downloading publications database:"
-    scrapeADS -r -m 1000 -a "$name" 
+    scrapeADS -r -m 1000 -a "$name"
     set database = `\ls -tr *.bib | tail -1`
-  endif  
+  endif
   echo "Publications database: $database"
 else
   set name = Marshall
-endif  
+endif
 
 if ($database == 0) then
   print_script_header.csh $0
@@ -130,22 +130,24 @@ endif
   # eprint = {arXiv:astro-ph/0701114}
 
 set nmissing = 0
-\rm -f junk
+\rm -f junk*
 if ($database:e == 'bib') then
 
-  \rm -f junk*
   set surname = `echo $name | sed s/','/' '/g | awk '{print $1}'`
-  
-  set lines = `grep -n 'ARTICLE' $database | cut -d':' -f1`    
-     
+
+  set lines = `grep -n 'ARTICLE' $database | cut -d':' -f1`
+
   foreach line ( $lines )
+
     set date = `tail -n +$line $database | head -n 20 | \
-     grep 'eprint' | head -1 | \
-     sed s%'arXiv:astro-ph/'%%g | sed s%'arXiv:hep-ph/'%%g | \
-     cut -d'{' -f2 | cut -d'}' -f1 | cut -c1-4`
-     
+      grep 'eprint' | head -1 | \
+      sed s%'astro-ph/'%%g | \
+      sed s%'arXiv:astro-ph/'%%g | \
+      sed s%'arXiv:hep-ph/'%%g | \
+      cut -d'{' -f2 | cut -d'}' -f1 | cut -c1-4`
+
 #      echo "line = $line, date = $date"
-     
+
     if ($#date > 0) then
       echo $date >> junk1
       tail -n +$line $database | head -n 30 | \
@@ -154,12 +156,12 @@ if ($database:e == 'bib') then
        awk '{if ($1 == 999) print 1; else print 0}' >> junk2
 #   Otherwise, leave it out!
     else
-      @ nmissing ++   
+      @ nmissing ++
     endif
-#     echo -n `tail -1 junk1` ; tail -1 junk2 
-    
-  end   
-    
+#     echo -n `tail -1 junk1` ; tail -1 junk2
+
+  end
+
 else
 
   set i = `grep -n 'begin{revnumerate}' $database | cut -d':' -f1`
@@ -179,7 +181,7 @@ else
      sed s/$surname/999/g | \
      awk '{if ($1 == 999) print 1; else print 0}' > junk2
 #      awk '{print $1}' > junk2
-  
+
 endif
 
 # Deal with wraparound:
@@ -191,7 +193,7 @@ foreach index ( `cat junk1` )
     set index = "20$index"
   else
     set index = "19$index"
-  endif 
+  endif
 # Update this script in 2020!
   echo $index >> junk3
 end
@@ -215,8 +217,8 @@ if ($nmissing > 0) echo "WARNING: $nmissing publications not arxived/plotted"
 
 set output = ${database:r}_publication-rate.txt ; \rm -f $output
 set foutput = ${database:r}_first-author-publication-rate.txt ; \rm -f $foutput
-echo "# time/years  pub_no."  > $output 
-echo "# time/years  pub_no."  > $foutput 
+echo "# time/years  pub_no."  > $output
+echo "# time/years  pub_no."  > $foutput
 set ii = 0
 foreach i ( `seq $#index` )
   set year = `echo $index[$i] | cut -c1-4`
@@ -225,7 +227,7 @@ foreach i ( `seq $#index` )
     echo "Date of first paper: $month/$year"
     set month0 = $month
     set year0 = $year
-  endif  
+  endif
   set t = `echo $year $month | awk '{print (($1 - '$year0')*12 + ($2 - '$month0'))/12.0 }'`
 #   echo "${index[$i]}: appeared $month/$year, t = $t"
   if ($i == 1) then
@@ -235,33 +237,33 @@ foreach i ( `seq $#index` )
     else
       set tstart = $t
     endif
-    echo "$tstart    0"  >> $output 
-  else 
-  endif  
+    echo "$tstart    0"  >> $output
+  else
+  endif
   if ($i == $halfn) then
     set halft = $t
-  endif  
+  endif
   echo "$t    $i"  >> $output
   if ($firstauthor[$i] == 1) then
     @ ii ++
     echo "$t    $ii"  >> $foutput
-  endif  
-end 
+  endif
+end
 
-# Set limits for plot: 
-  
-set xmin = $tstart  
-# set xmax = `date +%Y | awk '{print $1 - '$year0'}'`  
+# Set limits for plot:
+
+set xmin = $tstart
+# set xmax = `date +%Y | awk '{print $1 - '$year0'}'`
 set yearnow = `date +%Y`
 set monthnow = `date +%m`
 set xmax = `echo $yearnow $monthnow | awk '{print (($1 - '$year0')*12 + ($2 - '$month0'))/12.0 }'`
 set ymin = 0.0
-set ymax = `echo $i | awk '{print $1 * 1.1}'`  
-  
+set ymax = `echo $i | awk '{print $1 * 1.1}'`
+
 # MODEL CURVES!
 
-if ($model == "exponential") then  
-  
+if ($model == "exponential") then
+
   if ($halflife == 0) then
   # Estimate half-life, tabulate exponential:
     set halflife = `echo $t $halft | awk '{print ($1 - $2)/log(2.0)}'`
@@ -322,42 +324,65 @@ else
 
 endif
 
-
+# --------------------------------------------------------------------
+# Plot
 
 # Reference line (doubling date by default)
-if ($refdate == 0) then 
+if ($refdate == 0) then
   set reftime = $halft
 else
   set refmonth = `echo $refdate | cut -d'/' -f1`
   set refyear = `echo $refdate | cut -d'/' -f2`
   set reftime = `echo $refyear $refmonth | awk '{print (($1 - '$year0')*12 + ($2 - '$month0'))/12.0 }'`
-endif  
-set reference = $output:r.ref ; \rm -f $reference
-echo "$reftime 0.0\
-$reftime $ymax" >! $reference
+endif
+# Old code:
+# set reference = $output:r.ref ; \rm -f $reference
+# echo "$reftime 0.0\
+# $reftime $ymax" >! $reference
+#
+# set legendfile = $output:r.legend
+# echo "First-author papers,\
+#   $string1\
+# Other-author papers,\
+#   $string2" > $legendfile
+# if ($refdate != 0) echo "Reference: $refmonth/$refyear" >> $legendfile
+# set stylefile = $output:r.style
+# echo "11  3  1\
+# 5  3  2\
+# 2  3  1\
+# 8  3  2\
+# 1  2  4" > $stylefile
+#
+#
+# lineplot.pl -l -ch0 1.2 $foutput $fmodel $output $model $reference \
+#   -o $output:r.ps \
+#   -xmin $tstart -ymin 0 -xmax $xmax -ymax $ymax \
+#   -legend $legendfile  -style $stylefile \
+#   -xlabel "Years since $month0/$year0" -ylabel "No. of refereed publications" \
+#   -title "${name}: $#index refereed, arxived papers since $month0/$year0"
 
-# Plot:
+# Python:
+set pyfile = $output:r.py
+set pngfile = $output:r.png
 
-set legendfile = $output:r.legend
-echo "First-author papers,\
-  $string1\
-Other-author papers,\
-  $string2\
-Reference: $refmonth/$refyear" > $legendfile
-set stylefile = $output:r.style
-echo "11  3  1\
-5  3  2\
-2  3  1\
-8  3  2\
-1  2  4" > $stylefile
+echo "import numpy as np, matplotlib.pyplot as plt" > $pyfile
+echo "data = np.loadtxt('$output')" >> $pyfile
+echo "model = np.loadtxt('$model')" >> $pyfile
+echo "fmodel = np.loadtxt('$fmodel')" >> $pyfile
+echo "fig = plt.figure()" >> $pyfile
+echo "fig.set_size_inches(12,9)" >> $pyfile
+echo "plt.plot(data[:,0],data[:,1],color='red',linestyle='-',linewidth=2,label='Publications')" >> $pyfile
+echo "plt.plot(fmodel[:,0],fmodel[:,1],color='blue',linestyle='-.',linewidth=2,label='Model: first author')" >> $pyfile
+echo "plt.plot(model[:,0],model[:,1],color='blue',linestyle=':',linewidth=2,label='Model: all')" >> $pyfile
+echo "plt.title('Cumulative Publication Rate')" >> $pyfile
+echo "plt.xlabel('Years since $month0/$year0')" >> $pyfile
+echo "plt.ylabel('No. of refereed publications')" >> $pyfile
+echo "plt.legend(loc=0)" >> $pyfile
+echo "plt.grid(color='grey', linestyle='--', linewidth=0.5)" >> $pyfile
+echo "fig.save('$pngfile')" >> $pyfile
 
+python $pyfile
 
-lineplot.pl -l -ch0 1.2 $foutput $fmodel $output $model $reference \
-  -o $output:r.ps \
-  -xmin $tstart -ymin 0 -xmax $xmax -ymax $ymax \
-  -legend $legendfile  -style $stylefile \
-  -xlabel "Years since $month0/$year0" -ylabel "No. of refereed publications" \
-  -title "${name}: $#index refereed, arxived papers since $month0/$year0"
-
+echo "Plot stored in $pngfile"
 
 FINISH:
