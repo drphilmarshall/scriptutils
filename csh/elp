@@ -259,7 +259,7 @@ if ($obslambda > 0) then
   if ($vb) echo "Conditional redshifts:"
   
   foreach k ( $index )
-    set z = `echo "$obslambda / $lambda0[$k] - 1.0" | bc -l | cut -c 1-4`
+    set z = `echo "$obslambda / $lambda0[$k] - 1.0" | bc -l | cut -c 1-6`
     set c = `echo "$z" | cut -c 1`
     if ("$c" == '-') set z = '-'
     if ("$c" == '.') set z = "0$z"
