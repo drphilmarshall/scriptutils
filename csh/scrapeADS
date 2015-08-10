@@ -99,7 +99,7 @@ set library = 0
 set logic = 'AND'
 set help = 0
 set nmax = 1000
-
+set year = 'all'
 
 unset noclobber
 unalias rm
@@ -238,7 +238,8 @@ endif
 
 if ( ! $?year ) then
 #   echo "scrapeADS: no year specified"
-  set year = ""
+  set startyear = ""
+  set endyear = ""
 # else
 #   echo "scrapeADS: year set to $year"
 endif
@@ -334,10 +335,11 @@ else
   end
 endif
 
-if ( $year == "" ) then
+if ( $year == "all" ) then
   set outfile = "${outfile}allyears.bib"
   set comment = "${comment} since records began"
   set startyear = ""
+  set endyear = ""
 else if ( $year == "range" ) then
     set outfile = "${outfile}${startyear}-${endyear}.bib"
     set comment = "${comment} in period ${startyear}-${endyear}"
