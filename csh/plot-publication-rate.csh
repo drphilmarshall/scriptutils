@@ -379,7 +379,7 @@ echo "plt.xlabel('Years since $month0/$year0')" >> $pyfile
 echo "plt.ylabel('No. of refereed publications')" >> $pyfile
 echo "plt.legend(loc=0)" >> $pyfile
 echo "plt.grid(color='grey', linestyle='--', linewidth=0.5)" >> $pyfile
-echo "fig.save('$pngfile')" >> $pyfile
+echo "plt.savefig('$pngfile')" >> $pyfile
 
 python $pyfile
 
