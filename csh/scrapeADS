@@ -384,13 +384,25 @@ echo "scrapeADS: querying ADS for articles$comment"
 
 # Download search results webpage:
 
-links -source "$url" > htmlfile
+set resultsfile = ${outfile:r}_search_results.html
+links -source "$url" > $resultsfile
+
+# This may fail, if a lot of calls have been made recently:
+
+set fail = `grep 'Error' $resultsfile | head -1 | wc -l`
+if ($fail) then
+    echo "scrapeADS: search failed:"
+    echo ""
+    cat $resultsfile
+    goto FINISH
+endif
+
 
 # Scan for abstract information: array of abstract keys:
 
 # ADS format change - switch to getting IDs and constructing search url manually
 
-set abskeys = `grep http htmlfile | grep ABSTRACT | \
+set abskeys = `grep http $resultsfile | grep ABSTRACT | \
                sed s/value=/+/g | sed s/\>\&nbsp\;/+/g | \
                awk 'BEGIN {FS="+"} {print $2}' | sed s/\"//g `
 
@@ -422,10 +434,11 @@ biburlsloop:
 
   set biburl = "${string1}${abskeys[$k]}${string2}"
 
-  links -source "$biburl" > htmlfile
+  set htmlfile = ${abskeys[$k]}.html
+  links -source "$biburl" > $htmlfile
 
 # Check for errors, skip if necessary:
-  set fail = `grep -e 'No valid abstract' -e 'No bibcodes' htmlfile | \
+  set fail = `grep -e 'No valid abstract' -e 'No bibcodes' $htmlfile | \
                 head -1 | wc -l`
   if ($fail) then
     echo ""
@@ -442,7 +455,7 @@ biburlsloop:
     set i=0
     while ( $i < $nmax )
       @ i ++
-      set test = `grep -A $i author htmlfile | grep title | cut -d"=" -f1`
+      set test = `grep -A $i author $htmlfile | grep title | cut -d"=" -f1`
       if ( $#test != 0 ) then
         goto collapse
       endif
@@ -458,7 +471,7 @@ biburlsloop:
     endif
 
   # Now cram all these lines into a single variable, lines:
-    grep -A $nlines author htmlfile > text
+    grep -A $nlines author $htmlfile > text
     @ nlines ++
     set lines = ()
     set i=0
@@ -515,7 +528,7 @@ biburlsloop:
     # GETYEAR:
     #
     # # Get year (overwritten) from bibtex page too (in case -y wasn't set):
-    # set line = `grep 'year =' htmlfile`
+    # set line = `grep 'year =' $htmlfile`
     # set year = `echo "${line}" | cut -d "=" -f 2 | cut -d"," -f 1`
     # set x = `echo $year | cut -b 3-4`
     # set bibkey = "${bibkey}$x"
@@ -542,7 +555,7 @@ biburlsloop:
     GETYEAR:
 
   # Get year (overwritten) from bibtex page too (in case -y wasn't set):
-    set line = `grep 'year =' htmlfile`
+    set line = `grep 'year =' $htmlfile`
     set year = `echo "${line}" | cut -d "=" -f 2 | cut -d"," -f 1`
     set x = `echo $year | cut -b 1-4`
     set bibkey = "${bibkey}$x"
@@ -558,18 +571,18 @@ biburlsloop:
 
 # Trim out bibtex part of webpage, prepend bibkey, write out:
 
-  set nlines = `cat htmlfile | wc -l`
+  set nlines = `cat $htmlfile | wc -l`
   @ nfoot = $nlines - 6
   if ($nfoot < 0) then
-    echo "Error: download may have failed, check htmlfile"
+    echo "Error: download may have failed, check $htmlfile"
     goto FINISH
   endif
 
   echo "@ARTICLE{${bibkey}," >> $outfile
-  tail -n $nfoot htmlfile    >> $outfile
+  tail -n $nfoot $htmlfile    >> $outfile
   echo -n "."
 
-  \rm -f htmlfile
+  \rm -f $htmlfile
 
 NEXTABSKEY:
   if ( $k < $#abskeys ) then
@@ -581,6 +594,6 @@ echo " "
 echo "scrapeADS: bibliographic database written to $outfile"
 
 FINISH:
-\rm -f htmlfile
+# \rm -f $resultsfile
 
 #=======================================================================
