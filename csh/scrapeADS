@@ -482,7 +482,7 @@ biburlsloop:
       if ($i < $nlines) then
         goto cramloop
       endif
-    rm text
+    \rm -f text
 
 #     echo "lines = $lines"
 
